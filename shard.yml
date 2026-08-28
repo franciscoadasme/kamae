@@ -1,0 +1,20 @@
+name: resconf
+version: 0.1.0
+
+authors:
+  - Francisco Adasme <francisco.adasme@gmail.com>
+
+dependencies:
+  chem:
+    github: franciscoadasme/chem.cr
+    branch: master
+  hclust:
+    github: franciscoadasme/hclust
+
+targets:
+  resconf:
+    main: src/resconf.cr
+
+crystal: ">= 1.15.1"
+
+license: MIT
