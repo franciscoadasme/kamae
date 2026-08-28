@@ -6,12 +6,14 @@ require "hclust"
 NON_CLUSTERABLE = Set{"GLY", "PRO"}
 VERSION         = "0.1.0"
 RARE_FLOOR      = 0.05
+NEFF_MIN        =  1.3
 
 class Options
   getter residues : Array(ResId) = [] of ResId
   property cutoff : Float64 = 2.0
   property rule : HClust::Rule = :complete
   property merge_rare : Bool = false
+  property drop_frozen : Bool = false
 end
 
 class Chem::Structure
@@ -79,6 +81,19 @@ def merge_rare_states(mask : Array(Int32), dmat : HClust::DistanceMatrix, floor 
   relabel_by_population(merged)
 end
 
+def n_eff(mask : Array(Int32)) : Float64
+  n = mask.size.to_f
+  return 1.0 if n <= 0
+  counts = Hash(Int32, Int32).new(0)
+  mask.each { |c| counts[c] += 1 }
+  h = 0.0
+  counts.each_value do |c|
+    p = c / n
+    h -= p * Math.log2(p) if p > 0
+  end
+  2.0 ** h
+end
+
 def compute_fingerprints(structures : Array(Chem::Structure), opts : Options) : {Array(ResId), Array(Array(Int32))}
   puts "Analyzing residue configurations..."
 
@@ -103,6 +118,14 @@ def compute_fingerprints(structures : Array(Chem::Structure), opts : Options) : 
     end
 
     next unless (mask.max? || 0) + 1 > 1
+
+    if opts.drop_frozen
+      ne = n_eff(mask)
+      if ne < NEFF_MIN
+        puts "    drop-frozen #{resid}: n_eff=#{sprintf("%.2f", ne)}"
+        next
+      end
+    end
 
     clustered_resids << resid
     residue_cluster_masks << mask
@@ -257,6 +280,7 @@ OptionParser.parse do |parser|
     end
   end
   parser.on("--merge-rare", "Merge states with frequency < 5% to the nearest kept centroid") { opts.merge_rare = true }
+  parser.on("--drop-frozen", "Drop residues with n_eff < #{NEFF_MIN}") { opts.drop_frozen = true }
   parser.on("-o PREFIX", "--output PREFIX", "Output path prefix (no extension)") { |str| output = Path[str] }
   parser.on("--global", "Cluster the whole site instead of per-residue fingerprints") { global = true }
   parser.on("-h", "--help", "Show this help") do
@@ -290,6 +314,7 @@ if global
 else
   extra = String.build do |io|
     io << ", merge-rare #{(RARE_FLOOR * 100).to_i}%" if opts.merge_rare
+    io << ", drop-frozen n_eff<#{NEFF_MIN}" if opts.drop_frozen
   end
   puts "Local clustering at #{opts.cutoff} A (#{opts.rule.to_s.downcase}#{extra})..."
   repr = cluster_local(prefix, structures, opts)
