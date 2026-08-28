@@ -5,11 +5,13 @@ require "hclust"
 
 NON_CLUSTERABLE = Set{"GLY", "PRO"}
 VERSION         = "0.1.0"
+RARE_FLOOR      = 0.05
 
 class Options
   getter residues : Array(ResId) = [] of ResId
   property cutoff : Float64 = 2.0
   property rule : HClust::Rule = :complete
+  property merge_rare : Bool = false
 end
 
 class Chem::Structure
@@ -26,6 +28,57 @@ record ResId, chain : Char, number : Int32, insertion_code : Char? = nil do
   end
 end
 
+def residue_rmsd(a : Chem::Residue, b : Chem::Residue) : Float64
+  atoms_a = a.atoms.select(&.heavy?)
+  indexed_b = b.atoms.select(&.heavy?).index_by(&.name)
+  atoms_b = atoms_a.map do |atom|
+    indexed_b[atom.name]? || abort "error: missing atom #{a.spec}:#{atom.name} in #{b.structure.title}"
+  end
+  rmsd = atoms_a.rmsd atoms_b, use_symmetry: true
+  abort "error: RMSD too large for #{a}; check protein alignment" if rmsd > 20
+  rmsd
+end
+
+def relabel_by_population(mask : Array(Int32)) : Array(Int32)
+  counts = Hash(Int32, Int32).new(0)
+  mask.each { |c| counts[c] += 1 }
+  order = counts.keys.sort_by { |c| {-counts[c], c} }
+  map = {} of Int32 => Int32
+  order.each_with_index { |c, i| map[c] = i }
+  mask.map { |c| map[c] }
+end
+
+# Remap states with frequency < floor to the nearest kept-state centroid
+# (residue RMSD). Relabel by decreasing population afterwards.
+def merge_rare_states(mask : Array(Int32), dmat : HClust::DistanceMatrix, floor : Float64) : Array(Int32)
+  n = mask.size
+  nst = (mask.max? || 0) + 1
+  counts = Array.new(nst, 0)
+  mask.each { |c| counts[c] += 1 }
+
+  kept = (0...nst).select { |c| counts[c] / n >= floor }
+  if kept.empty?
+    maxc = counts.max
+    kept = (0...nst).select { |c| counts[c] == maxc }
+  end
+  return relabel_by_population(mask) if kept.size == nst
+
+  centroids = {} of Int32 => Int32
+  kept.each do |c|
+    members = (0...n).select { |i| mask[i] == c }
+    sub = dmat[members]
+    centroids[c] = members[sub.centroid]
+  end
+
+  kept_set = Set.new(kept)
+  merged = mask.dup
+  (0...n).each do |i|
+    next if kept_set.includes?(merged[i])
+    merged[i] = kept.min_by { |c| dmat[i, centroids[c]] }
+  end
+  relabel_by_population(merged)
+end
+
 def compute_fingerprints(structures : Array(Chem::Structure), opts : Options) : {Array(ResId), Array(Array(Int32))}
   puts "Analyzing residue configurations..."
 
@@ -37,16 +90,16 @@ def compute_fingerprints(structures : Array(Chem::Structure), opts : Options) : 
     residue_instances = structures.map &.dig(resid)
     next if NON_CLUSTERABLE.includes?(residue_instances[0].name) || residue_instances.size <= 1
 
-    # mask[i] => cluster index (configuration) of the residue at i-th structure
-    mask = HClust.labels(residue_instances, cutoff: opts.cutoff, rule: opts.rule) do |a, b|
-      atoms_a = a.atoms.select(&.heavy?)
-      indexed_b = b.atoms.select(&.heavy?).index_by(&.name)
-      atoms_b = atoms_a.map do |atom|
-        indexed_b[atom.name]? || abort "error: missing atom #{a.spec}:#{atom.name} in #{b.structure.title}"
+    dmat = HClust::DistanceMatrix.new(residue_instances) { |a, b| residue_rmsd(a, b) }
+    mask = HClust.linkage(dmat, opts.rule).labels(opts.cutoff)
+    n_before = (mask.max? || 0) + 1
+
+    if opts.merge_rare
+      mask = merge_rare_states(mask, dmat, RARE_FLOOR)
+      n_after = (mask.max? || 0) + 1
+      if n_after < n_before
+        puts "    merge-rare #{resid}: #{n_before} → #{n_after} states"
       end
-      rmsd = atoms_a.rmsd atoms_b, use_symmetry: true
-      abort "error: RMSD too large for #{resid}; check protein alignment" if rmsd > 20
-      rmsd
     end
 
     next unless (mask.max? || 0) + 1 > 1
@@ -203,6 +256,7 @@ OptionParser.parse do |parser|
       abort "error: unknown linkage #{str} (use complete, average, single, or weighted)"
     end
   end
+  parser.on("--merge-rare", "Merge states with frequency < 5% to the nearest kept centroid") { opts.merge_rare = true }
   parser.on("-o PREFIX", "--output PREFIX", "Output path prefix (no extension)") { |str| output = Path[str] }
   parser.on("--global", "Cluster the whole site instead of per-residue fingerprints") { global = true }
   parser.on("-h", "--help", "Show this help") do
@@ -234,7 +288,10 @@ if global
   puts "Global clustering at #{opts.cutoff} A (#{opts.rule.to_s.downcase})..."
   repr = cluster_global(prefix, structures, opts)
 else
-  puts "Local clustering at #{opts.cutoff} A (#{opts.rule.to_s.downcase})..."
+  extra = String.build do |io|
+    io << ", merge-rare #{(RARE_FLOOR * 100).to_i}%" if opts.merge_rare
+  end
+  puts "Local clustering at #{opts.cutoff} A (#{opts.rule.to_s.downcase}#{extra})..."
   repr = cluster_local(prefix, structures, opts)
 end
 
