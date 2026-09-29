@@ -1,14 +1,9 @@
 # resconf
 
-Select representative protein structures from a crystal (or later MD)
-ensemble by clustering **per-residue** heavy-atom conformations, then
-keeping one centroid per unique combination of residue states.
-
-This is a Crystal port of `pdb_resconf.py` + `pdb_select.py --conf` from
-DockRecepConfSel. Structures are assumed to be **already aligned** on the
-binding site. RMSD is **in-place** (no QCP overlay of a residue onto
-itself). Side-chain symmetry comes from chem.cr residue templates
-(`use_symmetry: true`).
+Select representative protein structures from a crystal (or MD) ensemble
+for ensemble docking. Per-residue heavy-atom conformations at the binding
+site are clustered into fingerprints, and one medoid is kept per unique
+fingerprint after structural redundancy reduction.
 
 ## Install
 
@@ -19,37 +14,79 @@ shards install
 shards build --release
 ```
 
+The executable is `bin/resconf`.
+
 ## Usage
 
 ```text
-resconf --residues A:64,A:135 --cutoff 2 --linkage complete -o out_prefix *.mae
-resconf --residues residues.txt --global -o out_global crystals--prepared--no-water.maegz
+resconf -o PREFIX [options] FILE...
+resconf -r RESIDUES --prealigned -o PREFIX FILE...
 ```
 
-`--residues` is a comma-separated list (`A:64`, insertion codes as `A:14A`)
-or a `.txt` file with that list. `--global` clusters the whole site at the
-same cutoff (today’s site-RMSD baseline) instead of building fingerprints.
+`FILE` is any structure file readable by chem.cr (PDB, Maestro, …), a
+multi-structure file, or a directory of them.
 
-Outputs (local mode):
+| Option | Description |
+|---|---|
+| `-r`, `--residues LIST` | Binding-site residues (`A:64,A:135`, insertion codes as `A:14A`) or a `.txt` file with that list. Auto-detected when omitted. |
+| `--prealigned` | Skip the site alignment (structures already superimposed). |
+| `-d`, `--cutoff NUMBER` | Clustering height in Å (default 2). |
+| `--linkage RULE` | `complete` (default), `average`, `single` or `weighted`. |
+| `-o`, `--output PREFIX` | Output path prefix. |
 
-- `{prefix}_conf.csv` — state ID per structure and residue
-- `{prefix}_conf-prob.csv` — state frequencies
-- `{prefix}_repr.txt` — comma-separated PDB IDs of centroids
-- `{prefix}_repr.maegz` — those structures
-
-GLY and PRO are not clustered (one dummy state) and drop out of the
-fingerprint if they have a single state.
-
-## Docking power
-
-`resconf` does not run Glide. After writing `{prefix}_repr.txt`, docking
-power **D** is the existing JSON check:
+Examples:
 
 ```sh
-python Scripts/dock_hit.py --cutoff 2 --limit 5 --recep out_repr.txt Analysis/.../dock_entries.json
+# detect the site, align, and select representatives
+resconf -o out/target structures/*.pdb
+
+# explicit site on an ensemble that is already superimposed
+resconf -r site.txt --prealigned -o out/target ensemble.maegz
 ```
 
-Stage 1a (no filters) reads the prepared Maestro ensembles in
-`DockRecepConfSel/Datos/*/01_preparation/crystals--prepared--no-water.maegz`.
-Local fingerprints match Python on CA2 and AChE; renin/CDK2 lose a few
-codes on the 2 Å cut. Sampling power S is not computed here.
+### Outputs
+
+- `{prefix}_binding-site.txt` — site residues used (comma-separated)
+- `{prefix}_conf.csv` — state per structure and fingerprint column
+- `{prefix}_conf-prob.csv` — state frequencies
+- `{prefix}_reslist.csv` — fingerprint columns
+- `{prefix}_repr.txt` — IDs of the representative structures
+- `{prefix}_repr.maegz` — the representative structures
+
+## Protocol
+
+1. **Binding site.** Unless given with `-r`, the site is detected from the
+   co-crystallized ligands:
+   - Ligands are molecules (residues joined by covalent bonds) with 5–100
+     heavy atoms, excluding solvent, ions and common additives (Maestro
+     `LigandParameters` defaults). Coordination bonds do not join
+     molecules. Peptides count as ligands, but pieces of a protein chain
+     do not; ligands covalently bound to the protein are not detected.
+     Bonds are guessed when the input has none.
+   - Each ligand defines a pocket: the protein residues within 5 Å (heavy
+     atoms). Pockets sharing at least half of the smaller one are linked
+     across the ensemble, and the group seen in the most structures is the
+     binding site (union of its pockets).
+   - Residues missing or of a different type in any structure are dropped.
+2. **Alignment.** Unless `--prealigned`, every structure is superimposed
+   on the first one using the site Cα atoms.
+3. **Fingerprint units.** Backbone and side-chain RMSF are measured per
+   site residue. Mobile non-helical residues that contact the pocket
+   ligand are merged into loop blocks; those that do not are dropped.
+4. **Unit states.** Each unit's in-place heavy-atom conformations are
+   clustered (hierarchical, `--linkage` at `--cutoff`). Then:
+   - rare states (< 5 % of structures) are merged into the nearest one;
+   - units with too few effective states are dropped, and those with too
+     many without ligand contact are dropped or capped;
+   - side-chain states that never face the ligand are merged; if none
+     does, the unit is reclustered on the backbone or dropped.
+5. **Redundant columns.** Units whose states are highly correlated
+   (normalized mutual information) are pruned.
+6. **Representatives.** One site-RMSD medoid is kept per unique
+   fingerprint. Frequent fingerprints (≥ 5 %) are always kept, the rest
+   are reduced by structural redundancy, and any medoid needed to cover
+   every state of every column is restored.
+
+Assumptions: residue numbering is consistent across the ensemble, and
+holo structures are preferred for site detection. Side-chain symmetry
+comes from chem.cr residue templates.
