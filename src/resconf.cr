@@ -3,7 +3,8 @@
 # Selects a small set of representative holo structures from a crystal (or MD)
 # ensemble. Algorithm:
 #
-# 1. Resolve the binding site (`-r` or auto-detect from ligands).
+# 1. Resolve the binding site (`-r` or auto-detect from ligands) and, unless
+#    `--prealigned`, QCP-align the ensemble on site CA atoms.
 # 2. Build fingerprint units from the residue list:
 #    - Measure backbone/side-chain RMSF (DSSP secondary structure).
 #    - Non-helical list residues above an adaptive backbone-RMSF threshold
@@ -24,12 +25,11 @@
 #    structurally redundant medoids on the N_ij=0 graph (Sci Rep 2021), and
 #    restore any medoid needed so every per-column state remains covered.
 #
-# Structures must already be binding-site aligned. Fingerprint RMSD is
-# in-place (no per-residue QCP). Side-chain symmetry uses
+# Fingerprint RMSD is in-place (no per-residue QCP). Side-chain symmetry uses
 # chem.cr templates. Ligand detection follows Maestro LigandParameters.
 #
 # Layout (src/resconf/):
-#   chem_ext, resid, geometry, ligand, site,
+#   chem_ext, resid, geometry, ligand, site, align,
 #   fingerprint, mobility, clustering, representatives, io
 
 require "option_parser"
@@ -38,6 +38,7 @@ require "csv"
 require "hclust"
 
 require "./resconf/chem_ext"
+require "./resconf/align"
 require "./resconf/clustering"
 require "./resconf/fingerprint"
 require "./resconf/geometry"
@@ -54,12 +55,13 @@ class Options
   getter residues : Array(ResId) = [] of ResId
   property cutoff : Float64 = 2.0
   property rule : HClust::Rule = :complete
+  property prealigned : Bool = false
 end
 
 opts = Options.new
 output = nil.as(Path?)
 OptionParser.parse do |parser|
-  parser.banner = "Usage: resconf [-r RESIDUES] -o PREFIX [options] FILE..."
+  parser.banner = "Usage: resconf -o PREFIX [options] FILE...\n       resconf -r RESIDUES --prealigned -o PREFIX FILE..."
   parser.on("-r LIST", "--residues LIST", "Comma-separated residues (A:64) or a .txt file (optional; auto-detect if omitted)") do |str|
     text = str.ends_with?(".txt") || File.file?(str) ? File.read(str) : str
     text.gsub('\n', ',').split(',').map do |token|
@@ -67,6 +69,7 @@ OptionParser.parse do |parser|
       opts.residues << ResId.parse(token) unless token.empty?
     end
   end
+  parser.on("--prealigned", "Skip site alignment (structures already superimposed)") { opts.prealigned = true }
   parser.on("-d NUMBER", "--cutoff NUMBER", "Clustering height in A (default #{opts.cutoff})") do |str|
     opts.cutoff = str.to_f? || abort "error: invalid cutoff: #{str}"
     abort "error: cutoff must be positive" if opts.cutoff <= 0
@@ -103,6 +106,11 @@ puts "Loaded #{structures.size} structures"
 if opts.residues.empty?
   opts.residues.concat detect_binding_site(structures)
   puts "Detected binding site (#{opts.residues.size} residues)"
+end
+
+unless opts.prealigned
+  align_ensemble_to_site!(structures, opts.residues)
+  puts "Aligned ensemble to site CA of #{structures[0].title}"
 end
 
 parent = prefix.parent
