@@ -45,7 +45,7 @@ require "./resconf/mobility"
 require "./resconf/representatives"
 require "./resconf/resid"
 
-VERSION = "1.0.0"
+VERSION = "0.1.0"
 
 class Options
   getter residues : Array(ResId) = [] of ResId

@@ -9,7 +9,7 @@ require "./resconf/resid"
 require "./resconf/geometry"
 require "./resconf/io"
 
-VERSION = "1.0.0"
+VERSION = "0.1.0"
 
 class Options
   getter residues : Array(ResId) = [] of ResId
