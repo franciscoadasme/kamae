@@ -1,34 +1,41 @@
 SITE_LIGAND_CUT   = 7.0
-LIGAND_HEAVY_MIN  = 10
-LIGAND_HEAVY_MAX  = 80
 LIGAND_CONTACT    = 5.0
 CONTACT_HOLO_FRAC = 0.10
 CONTACT_HOLO_MIN  = 5
 
-# One pocket ligand per structure: nearest drug-like HET within SITE_LIGAND_CUT
-# of any heavy atom in the residue list (Python --guess + -d).
+LIGAND_CACHE = {} of UInt64 => Array(Chem::AtomView)
+
+# Ligand molecules of *structure*, computed once per structure object.
+def ligand_molecules(structure : Chem::Structure) : Array(Chem::AtomView)
+  LIGAND_CACHE[structure.object_id] ||= structure.detect_ligands
+end
+
+# One pocket ligand per structure: the ligand molecule with the closest heavy
+# atom to any site heavy atom, within SITE_LIGAND_CUT.
 def site_ligand_heavies(structure : Chem::Structure, site_resids : Array(ResId), cutoff : Float64 = SITE_LIGAND_CUT) : Array(Chem::Atom)
+  site_ligand(structure, site_resids, cutoff).try(&.select(&.heavy?).to_a) || [] of Chem::Atom
+end
+
+def site_ligand(structure : Chem::Structure, site_resids : Array(ResId), cutoff : Float64 = SITE_LIGAND_CUT) : Chem::AtomView?
   site_atoms = site_heavy_atoms(structure, site_resids)
-  return [] of Chem::Atom if site_atoms.empty?
+  return if site_atoms.empty?
   r2 = cutoff * cutoff
-  best = nil.as(Chem::Residue?)
+  best = nil.as(Chem::AtomView?)
   best_d2 = Float64::MAX
-  structure.residues.each do |residue|
-    next unless ligand_like?(residue)
-    residue.atoms.each do |la|
+  ligand_molecules(structure).each do |lig|
+    lig.each do |la|
       next unless la.heavy?
       site_atoms.each do |sa|
         d2 = la.pos.distance2(sa.pos)
         next unless d2 <= r2
         if d2 < best_d2
           best_d2 = d2
-          best = residue
+          best = lig
         end
       end
     end
   end
-  return [] of Chem::Atom unless lig = best
-  lig.atoms.select(&.heavy?).to_a
+  best
 end
 
 def contacts_ligand?(resid : ResId, structures : Array(Chem::Structure), site_resids : Array(ResId), radius : Float64) : Bool
@@ -68,17 +75,6 @@ end
 def exposed_keep_min(n_holo : Int32) : Int32
   frac = (CONTACT_HOLO_FRAC * n_holo).ceil.to_i
   Math.max(CONTACT_HOLO_MIN, frac)
-end
-
-private def ligand?(residue : Chem::Residue) : Bool
-  !residue.protein? && !residue.water? && !residue.ion? && !residue.solvent? && !residue.dna? && !residue.membrane?
-end
-
-# Match pdb_binding_site.py is_ligand: drug-like HET size, not buffers/ions.
-private def ligand_like?(residue : Chem::Residue) : Bool
-  return false unless ligand?(residue)
-  n = residue.atoms.count(&.heavy?)
-  n >= LIGAND_HEAVY_MIN && n <= LIGAND_HEAVY_MAX
 end
 
 private def site_heavy_atoms(structure : Chem::Structure, site_resids : Array(ResId)) : Array(Chem::Atom)
