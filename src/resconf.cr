@@ -1,14 +1,15 @@
 # resconf — residue-configuration fingerprints for ensemble docking
 #
-# Selects a small set of representative holo structures from a site-aligned
-# crystal (or MD) ensemble. Algorithm:
+# Selects a small set of representative holo structures from a crystal (or MD)
+# ensemble. Algorithm:
 #
-# 1. Build fingerprint units from the residue list:
+# 1. Resolve the binding site (`-r` or auto-detect from ligands).
+# 2. Build fingerprint units from the residue list:
 #    - Measure backbone/side-chain RMSF (DSSP secondary structure).
 #    - Non-helical list residues above an adaptive backbone-RMSF threshold
 #      that contact the pocket ligand are merged into loop blocks; those that
 #      do not contact ligand are dropped from the fingerprint.
-# 2. For each unit, cluster in-place heavy-atom conformations (complete / 2 Å
+# 3. For each unit, cluster in-place heavy-atom conformations (complete / 2 Å
 #    by default) into a UnitAssignment (residues + one label per structure), then:
 #    - Merge rare states (< 5% of structures) into the nearest kept centroid.
 #    - Drop the unit if the Shannon effective state count n_eff is too low
@@ -16,19 +17,20 @@
 #      (exposed rotamers: drop or cap).
 #    - Merge side-chain states that never face the ligand; if no state faces,
 #      recluster on backbone (N,CA,C) or drop the unit.
-# 3. Drop redundant fingerprint columns whose UnitAssignments have
+# 4. Drop redundant fingerprint columns whose UnitAssignments have
 #    normalized mutual information (NMI) above a cutoff.
-# 4. Keep one site-RMSD medoid per unique Fingerprint code.
-# 5. Pin medoids whose Fingerprint is frequent (≥ 5%), then remove
+# 5. Keep one site-RMSD medoid per unique Fingerprint code.
+# 6. Pin medoids whose Fingerprint is frequent (≥ 5%), then remove
 #    structurally redundant medoids on the N_ij=0 graph (Sci Rep 2021), and
 #    restore any medoid needed so every per-column state remains covered.
 #
-# Structures must already be binding-site aligned. RMSD is in-place (no
-# per-residue QCP overlay). Side-chain symmetry uses chem.cr templates.
+# Structures must already be binding-site aligned. Fingerprint RMSD is
+# in-place (no per-residue QCP). Side-chain symmetry uses
+# chem.cr templates. Ligand detection follows Maestro LigandParameters.
 #
 # Layout (src/resconf/):
-#   chem_ext, resid, options, geometry, ligand,
-#   fingerprint, mobility, clustering, representatives, pipeline, io
+#   chem_ext, resid, geometry, ligand, site,
+#   fingerprint, mobility, clustering, representatives, io
 
 require "option_parser"
 require "chem"
@@ -44,6 +46,7 @@ require "./resconf/ligand"
 require "./resconf/mobility"
 require "./resconf/representatives"
 require "./resconf/resid"
+require "./resconf/site"
 
 VERSION = "0.1.0"
 
@@ -56,8 +59,8 @@ end
 opts = Options.new
 output = nil.as(Path?)
 OptionParser.parse do |parser|
-  parser.banner = "Usage: resconf -r RESIDUES -o PREFIX [options] FILE..."
-  parser.on("-r LIST", "--residues LIST", "Comma-separated residues (A:64) or a .txt file") do |str|
+  parser.banner = "Usage: resconf [-r RESIDUES] -o PREFIX [options] FILE..."
+  parser.on("-r LIST", "--residues LIST", "Comma-separated residues (A:64) or a .txt file (optional; auto-detect if omitted)") do |str|
     text = str.ends_with?(".txt") || File.file?(str) ? File.read(str) : str
     text.gsub('\n', ',').split(',').map do |token|
       token = token.strip
@@ -92,14 +95,20 @@ OptionParser.parse do |parser|
 end
 
 abort "error: missing structure files" if ARGV.empty?
-abort "error: missing --residues" if opts.residues.empty?
 abort "error: missing --output" unless prefix = output
 
 structures = load_structures(ARGV.map { |arg| Path[arg] })
 puts "Loaded #{structures.size} structures"
 
+if opts.residues.empty?
+  opts.residues.concat detect_binding_site(structures)
+  puts "Detected binding site (#{opts.residues.size} residues)"
+end
+
 parent = prefix.parent
 Dir.mkdir_p(parent.to_s) unless parent.to_s.empty? || parent.to_s == "."
+
+write_binding_site prefix, opts.residues
 
 puts "Clustering at #{opts.cutoff} A (#{opts.rule.to_s.downcase})..."
 repr = cluster_local(prefix, structures, opts)

@@ -30,6 +30,12 @@ def write_csv(path : String | Path, header : Array(String), rows : Array(Array(T
   end
 end
 
+def write_binding_site(prefix : Path, resids : Array(ResId)) : Nil
+  path = "#{prefix}_binding-site.txt"
+  File.write path, resids.map(&.to_s).join(',') + "\n"
+  puts "Binding site (#{resids.size} residues) dumped to #{path}"
+end
+
 def write_representatives(prefix : Path, repr : Array(Chem::Structure)) : Nil
   ids = repr.map &.title
   puts "Selected receptors (#{repr.size}): #{ids.join(' ')}"
