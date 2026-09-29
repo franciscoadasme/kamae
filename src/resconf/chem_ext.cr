@@ -2,3 +2,4 @@
 require "./chem_ext/templates"
 require "./chem_ext/connectivity"
 require "./chem_ext/average"
+require "./chem_ext/ligand"
