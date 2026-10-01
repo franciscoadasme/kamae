@@ -36,6 +36,24 @@ def write_binding_site(prefix : Path, resids : Array(ResId)) : Nil
   puts "Binding site (#{resids.size} residues) dumped to #{path}"
 end
 
+def write_fingerprints(prefix : Path, structures : Array(Chem::Structure), selection : Selection) : Nil
+  matrix = selection.matrix
+  File.write "#{prefix}_reslist.csv", matrix.column_labels.join(',') + "\n"
+
+  header = ["receptor"] + matrix.column_labels
+  table = structures.map(&.title).zip(selection.fingerprints).map { |title, fp| [title] + fp.to_a }
+  write_csv "#{prefix}_conf.csv", header, table
+
+  probs = conf_probabilities(matrix)
+  nconf = probs[0]?.try(&.size) || 0
+  header = [""] + (1..nconf).map(&.to_s)
+  table = matrix.column_labels.zip(probs).map do |lab, probs_row|
+    [lab] + probs_row.map { |p| "%0.3f" % p }
+  end
+  write_csv "#{prefix}_conf-prob.csv", header, table
+  puts "Residue conf. dumped to #{prefix}_conf.csv"
+end
+
 def write_representatives(prefix : Path, repr : Array(Chem::Structure)) : Nil
   ids = repr.map &.title
   puts "Selected receptors (#{repr.size}): #{ids.join(' ')}"

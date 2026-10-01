@@ -13,7 +13,7 @@ dependencies:
 
 targets:
   resconf:
-    main: src/resconf.cr
+    main: src/cli.cr
 
 crystal: ">= 1.15.1"
 

@@ -6,12 +6,19 @@ NEFF_MIN        = 1.3
 NMI_CUTOFF      = 0.7
 NON_CLUSTERABLE = Set{"GLY", "PRO"}
 
-def cluster_local(prefix : Path, structures : Array(Chem::Structure), opts : Options) : Array(Chem::Structure)
+record Selection,
+  candidates : Array(ResId),
+  matrix : StateMatrix,
+  fingerprints : Array(Fingerprint),
+  representatives : Array(Chem::Structure)
+
+# Fingerprint the site residues (`opts.residues`) of an already superimposed
+# ensemble and select representatives. Writes nothing.
+def select_receptors(structures : Array(Chem::Structure), opts : Options) : Selection
   # Only site residues with more than one conformation are fingerprint
   # candidates; the whole site still defines the pocket ligand.
   candidates = variable_residues(structures, opts.residues, opts)
   abort "error: no site residue has multiple conformations" if candidates.empty?
-  puts "Found #{candidates.size} of #{opts.residues.size} site residues with multiple conformations"
 
   # Group high-RMSF non-helical candidates that contact ligand into loop
   # blocks; drop mobile residues that never contact.
@@ -31,27 +38,7 @@ def cluster_local(prefix : Path, structures : Array(Chem::Structure), opts : Opt
   fingerprints = matrix.fingerprints
   # Medoids → pin frequent → drop N_ij=0-redundant → restore missing states.
   repr = select_representatives(structures, fingerprints, matrix.clustered_resids, opts)
-
-  puts "Found #{matrix.size} fingerprint columns with two or more distinct conformations"
-
-  File.write "#{prefix}_reslist.csv", matrix.column_labels.join(',') + "\n"
-
-  header = ["receptor"] + matrix.column_labels
-  table = structures.map(&.title).zip(fingerprints).map { |title, fp| [title] + fp.to_a }
-  write_csv "#{prefix}_conf.csv", header, table
-
-  probs = conf_probabilities(matrix)
-  nconf = probs[0]?.try(&.size) || 0
-  header = [""] + (1..nconf).map(&.to_s)
-  table = matrix.column_labels.zip(probs).map do |lab, probs_row|
-    [lab] + probs_row.map { |p| "%0.3f" % p }
-  end
-  write_csv "#{prefix}_conf-prob.csv", header, table
-
-  puts "Residue conf. dumped to #{prefix}_conf.csv"
-  puts "Unique fingerprints: #{fingerprints.uniq.size}"
-
-  repr
+  Selection.new(candidates, matrix, fingerprints, repr)
 end
 
 # Residues whose raw per-residue clustering (before any filter) yields more
