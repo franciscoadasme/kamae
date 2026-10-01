@@ -68,8 +68,11 @@ resconf -r site.txt --prealigned -o out/target ensemble.maegz
      across the ensemble, and the group seen in the most structures is the
      binding site (union of its pockets).
    - Residues missing or of a different type in any structure are dropped.
-2. **Alignment.** Unless `--prealigned`, every structure is superimposed
-   on the first one using the site Cα atoms.
+2. **Alignment.** Unless `--prealigned`, the site Cα atoms of every
+   structure are superimposed on their ensemble mean, iteratively
+   down-weighting mobile atoms (Gaussian weights of the per-atom deviation,
+   1 Å width) so the fit rests on the rigid part of the pocket. The result
+   does not depend on the orientation in which structures are given.
 3. **Fingerprint units.** Only site residues with more than one
    conformation are candidates (each residue clustered alone as in step 4,
    before any filter; GLY and PRO are never clustered). Backbone RMSF is

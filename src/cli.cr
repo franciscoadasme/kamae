@@ -52,8 +52,8 @@ if opts.residues.empty?
 end
 
 unless opts.prealigned
-  align_ensemble_to_site!(structures, opts.residues)
-  puts "Aligned ensemble to site CA of #{structures[0].title}"
+  align_on_site(structures, opts.residues)
+  puts "Superimposed ensemble on the site CA atoms"
 end
 
 parent = prefix.parent

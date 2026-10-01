@@ -4,7 +4,8 @@
 # ensemble. Algorithm:
 #
 # 1. Resolve the binding site (`-r` or auto-detect from ligands) and, unless
-#    `--prealigned`, QCP-align the ensemble on site CA atoms.
+#    `--prealigned`, superimpose the ensemble on the site CA atoms (fit to the
+#    ensemble mean, iteratively down-weighting mobile atoms).
 # 2. Build fingerprint units from the residue list:
 #    - Keep residues with more than one conformation (per-residue clustering
 #      at the same cutoff, before any filter; GLY/PRO never).
@@ -33,7 +34,7 @@
 # Library entry point; the command-line tool is src/cli.cr.
 #
 # Layout (src/resconf/):
-#   chem_ext, resid, geometry, ligand, site, align,
+#   chem_ext, resid, geometry, ligand, site,
 #   fingerprint, mobility, clustering, representatives, io
 
 require "chem"
@@ -52,7 +53,6 @@ class Options
   property prealigned : Bool = false
 end
 
-require "./resconf/align"
 require "./resconf/clustering"
 require "./resconf/fingerprint"
 require "./resconf/geometry"

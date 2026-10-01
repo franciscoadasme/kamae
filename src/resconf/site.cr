@@ -45,6 +45,13 @@ def detect_binding_site(structures : Array(Chem::Structure)) : Array(ResId)
   site.sort_by! { |r| {r.chain.ord, r.number, (r.insertion_code || ' ').ord} }
 end
 
+# Superimposes *structures* on the CA atoms of the *site* residues present
+# in all of them (see `Chem.align_ensemble`).
+def align_on_site(structures : Array(Chem::Structure), site : Array(ResId)) : Nil
+  resids = site.select { |rid| structures.all?(&.dig?(rid).try(&.["CA"]?)) }
+  Chem.align_ensemble(structures) { |s| Chem::AtomView.new(resids.map { |rid| s.dig(rid)["CA"] }) }
+end
+
 private def protein_shell(structure : Chem::Structure, ligand : Chem::AtomView, radius : Float64) : Set(ResId)
   r2 = radius * radius
   lig_heavies = ligand.select(&.heavy?)
