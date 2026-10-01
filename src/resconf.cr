@@ -19,8 +19,10 @@
 #    - Drop the unit if the Shannon effective state count n_eff is too low
 #      (frozen) or, after later steps, too high without ligand contact
 #      (exposed rotamers: drop or cap).
-#    - Merge side-chain states that never face the ligand; if no state faces,
-#      recluster on backbone (N,CA,C) or drop the unit.
+#    - Merge side-chain states that never face the ligand (facing in fewer
+#      than max(3, 1% of holos) structures counts as never); if no state
+#      faces, recluster on backbone (N,CA,C) when it contacts the ligand in
+#      enough holos, or drop the unit.
 # 4. Drop redundant fingerprint columns whose UnitAssignments have
 #    normalized mutual information (NMI) above a cutoff.
 # 5. Keep one site-RMSD medoid per unique Fingerprint code.

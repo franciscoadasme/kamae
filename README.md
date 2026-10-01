@@ -84,8 +84,11 @@ resconf -r site.txt --prealigned -o out/target ensemble.maegz
    - rare states (< 5 % of structures) are merged into the nearest one;
    - units with too few effective states are dropped, and those with too
      many without ligand contact are dropped or capped;
-   - side-chain states that never face the ligand are merged; if none
-     does, the unit is reclustered on the backbone or dropped.
+   - side-chain states that never face the ligand (side chain within
+     4.5 Å) are merged, where facing in fewer than max(3, 1 % of holo)
+     structures counts as never; if none does, the unit is reclustered on
+     the backbone when the backbone contacts the ligand in at least
+     max(5, 10 % of holo) structures, or dropped.
 5. **Redundant columns.** Units whose states are highly correlated
    (normalized mutual information) are pruned.
 6. **Representatives.** One site-RMSD medoid is kept per unique

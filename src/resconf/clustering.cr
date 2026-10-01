@@ -1,9 +1,11 @@
 # Per-unit clustering → StateMatrix.
 
-FACE_CUTOFF     = 4.5
-NEFF_MAX        = 4.0
-NEFF_MIN        = 1.3
-NMI_CUTOFF      = 0.7
+FACE_CUTOFF     =  4.5
+FACE_MIN_FRAC   = 0.01
+FACE_MIN_COUNT  =    3
+NEFF_MAX        =  4.0
+NEFF_MIN        =  1.3
+NMI_CUTOFF      =  0.7
 NON_CLUSTERABLE = Set{"GLY", "PRO"}
 
 record Selection,
@@ -114,7 +116,10 @@ def conf_probabilities(matrix : StateMatrix) : Array(Array(Float64))
 end
 
 # Merge non-facing side-chain states into one "away" bin (single-residue units).
-# If no state faces the ligand, recluster on backbone (N,CA,C) or drop.
+# Side chains facing the ligand in fewer than max(FACE_MIN_COUNT,
+# FACE_MIN_FRAC of holos) structures count as never facing. If no state faces
+# the ligand, recluster on backbone (N,CA,C) when the backbone contacts it in
+# enough holos (`exposed_keep_min`), or drop.
 # Loop blocks are left unchanged (pose already encodes facing).
 #
 # Returns nil if the unit is dropped. On success, *dmat* is passed through
@@ -130,7 +135,10 @@ private def merge_ligand_away_states(
 ) : {UnitAssignment, HClust::DistanceMatrix}?
   resids = assignment.resids
   r2 = FACE_CUTOFF * FACE_CUTOFF
+  n_holo = structures.count { |s| !site_ligand_heavies(s, site_resids).empty? }
+  min_frames = Math.max(FACE_MIN_COUNT, (FACE_MIN_FRAC * n_holo).ceil.to_i)
   faces_frame = structures.map { |s| unit_sc_faces_ligand?(s, resids, site_resids, r2) }
+  faces_frame.fill(false) if faces_frame.count(true) < min_frames
   nst = assignment.n_states
   state_faces = Array.new(nst, false)
   assignment.each_with_index { |st, i| state_faces[st] = true if faces_frame[i] }
@@ -138,6 +146,8 @@ private def merge_ligand_away_states(
   n_away = nst - n_face
 
   if n_face == 0
+    n_bb = structures.count { |s| unit_bb_contacts_ligand?(s, resids, site_resids, r2) }
+    return nil if n_bb < exposed_keep_min(n_holo)
     bb = cluster_backbone_assignment(structures, resids, opts)
     return nil unless bb.n_states > 1
     return nil if bb.n_eff < NEFF_MIN
@@ -180,4 +190,16 @@ private def unit_sc_faces_ligand?(structure : Chem::Structure, resids : Array(Re
     end
   end
   false
+end
+
+private def unit_bb_contacts_ligand?(structure : Chem::Structure, resids : Array(ResId), site_resids : Array(ResId), r2 : Float64) : Bool
+  ligands = site_ligand_heavies(structure, site_resids)
+  return false if ligands.empty?
+  resids.any? do |rid|
+    structure.dig?(rid).try do |prot|
+      prot.atoms.any? do |pa|
+        BACKBONE_NAMES.includes?(pa.name) && ligands.any? { |la| pa.pos.distance2(la.pos) <= r2 }
+      end
+    end
+  end
 end
