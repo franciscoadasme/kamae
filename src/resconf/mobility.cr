@@ -27,9 +27,10 @@ record MobilityAnalysis,
   end
 end
 
-# Mark non-helical fingerprint residues whose backbone RMSF exceeds
-# max(median helical bb RMSF, RMSF_BB_FLOOR). Threshold is ensemble-adaptive.
-def analyze_backbone_mobility(structures : Array(Chem::Structure), opts : Options) : MobilityAnalysis
+# Mark non-helical fingerprint residues (*candidates*) whose backbone RMSF
+# exceeds max(median helical bb RMSF, RMSF_BB_FLOOR). Threshold is
+# ensemble-adaptive.
+def analyze_backbone_mobility(structures : Array(Chem::Structure), opts : Options, candidates : Array(ResId)) : MobilityAnalysis
   ref = structures[0]
   Chem::Protein::DSSP.assign(ref)
 
@@ -46,7 +47,7 @@ def analyze_backbone_mobility(structures : Array(Chem::Structure), opts : Option
   abort "error: no helical residues for RMSF threshold" if helical_bb.empty?
   med = median(helical_bb)
   threshold = Math.max(med, RMSF_BB_FLOOR)
-  fingerprint_resids = Set.new(opts.residues)
+  fingerprint_resids = Set.new(candidates)
 
   mobilities = mobilities.map do |m|
     mobile = fingerprint_resids.includes?(m.resid) && m.sec != "H" && m.bb_rmsf > threshold
@@ -72,9 +73,9 @@ end
 
 # Contacting mobile loop blocks become multi-residue units; other mobile
 # residues are dropped; remaining fingerprint residues stay single-residue.
-def build_fingerprint_units(opts : Options, analysis : MobilityAnalysis) : Array(Array(ResId))
+def build_fingerprint_units(candidates : Array(ResId), analysis : MobilityAnalysis) : Array(Array(ResId))
   mobile = analysis.mobile_resids
-  fingerprint_resids = Set.new(opts.residues)
+  fingerprint_resids = Set.new(candidates)
   units = [] of Array(ResId)
   absorbed = Set(ResId).new
   analysis.loop_blocks.each do |block|
@@ -84,7 +85,7 @@ def build_fingerprint_units(opts : Options, analysis : MobilityAnalysis) : Array
     units << ids
     ids.each { |r| absorbed << r }
   end
-  opts.residues.each do |r|
+  candidates.each do |r|
     next if mobile.includes?(r)
     next if absorbed.includes?(r)
     units << [r]

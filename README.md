@@ -70,9 +70,12 @@ resconf -r site.txt --prealigned -o out/target ensemble.maegz
    - Residues missing or of a different type in any structure are dropped.
 2. **Alignment.** Unless `--prealigned`, every structure is superimposed
    on the first one using the site Cα atoms.
-3. **Fingerprint units.** Backbone and side-chain RMSF are measured per
-   site residue. Mobile non-helical residues that contact the pocket
-   ligand are merged into loop blocks; those that do not are dropped.
+3. **Fingerprint units.** Only site residues with more than one
+   conformation are candidates (each residue clustered alone as in step 4,
+   before any filter; GLY and PRO are never clustered). Backbone RMSF is
+   measured per candidate. Mobile non-helical candidates that contact the
+   pocket ligand are merged into loop blocks; those that do not are
+   dropped.
 4. **Unit states.** Each unit's in-place heavy-atom conformations are
    clustered (hierarchical, `--linkage` at `--cutoff`). Then:
    - rare states (< 5 % of structures) are merged into the nearest one;

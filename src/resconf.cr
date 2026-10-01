@@ -6,6 +6,8 @@
 # 1. Resolve the binding site (`-r` or auto-detect from ligands) and, unless
 #    `--prealigned`, QCP-align the ensemble on site CA atoms.
 # 2. Build fingerprint units from the residue list:
+#    - Keep residues with more than one conformation (per-residue clustering
+#      at the same cutoff, before any filter; GLY/PRO never).
 #    - Measure backbone/side-chain RMSF (DSSP secondary structure).
 #    - Non-helical list residues above an adaptive backbone-RMSF threshold
 #      that contact the pocket ligand are merged into loop blocks; those that

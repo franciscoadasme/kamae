@@ -7,10 +7,16 @@ NMI_CUTOFF      = 0.7
 NON_CLUSTERABLE = Set{"GLY", "PRO"}
 
 def cluster_local(prefix : Path, structures : Array(Chem::Structure), opts : Options) : Array(Chem::Structure)
-  # Group high-RMSF non-helical list residues that contact ligand into loop
+  # Only site residues with more than one conformation are fingerprint
+  # candidates; the whole site still defines the pocket ligand.
+  candidates = variable_residues(structures, opts.residues, opts)
+  abort "error: no site residue has multiple conformations" if candidates.empty?
+  puts "Found #{candidates.size} of #{opts.residues.size} site residues with multiple conformations"
+
+  # Group high-RMSF non-helical candidates that contact ligand into loop
   # blocks; drop mobile residues that never contact.
-  analysis = analyze_backbone_mobility(structures, opts)
-  units = build_fingerprint_units(opts, analysis)
+  analysis = analyze_backbone_mobility(structures, opts, candidates)
+  units = build_fingerprint_units(candidates, analysis)
   abort "error: RMSF filter removed every fingerprint residue" if units.empty?
 
   # Per unit: cluster conformations, merge rare states, drop frozen columns,
@@ -46,6 +52,18 @@ def cluster_local(prefix : Path, structures : Array(Chem::Structure), opts : Opt
   puts "Unique fingerprints: #{fingerprints.uniq.size}"
 
   repr
+end
+
+# Residues whose raw per-residue clustering (before any filter) yields more
+# than one state. GLY and PRO are never clustered.
+def variable_residues(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : Array(ResId)
+  return [] of ResId if structures.size <= 1
+  resids.select do |rid|
+    instances = structures.map &.dig(rid)
+    next false if NON_CLUSTERABLE.includes?(instances[0].name)
+    dmat = HClust::DistanceMatrix.new(instances) { |a, b| residue_rmsd(a, b) }
+    HClust.linkage(dmat, opts.rule).labels(opts.cutoff).uniq.size > 1
+  end
 end
 
 # Cluster one fingerprint unit across the ensemble. Returns nil if dropped.
