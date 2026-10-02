@@ -105,17 +105,17 @@ private def protein_like?(residue : Chem::Residue) : Bool
 end
 
 private def measure_residue_mobility(structures : Array(Chem::Structure), resid : ResId) : ResidueMobility?
-  instances = structures.compact_map(&.dig?(resid))
-  return nil if instances.size != structures.size
+  instances = structures.compact_map { |s| resolve_residue(s, resid) }
+  return nil if instances.size <= 1
   return nil unless instances[0].has_backbone?
-  ref_residue = structures[0].dig(resid)
+  ref_residue = instances[0]
   bb_rmsf = residue_rmsf(instances, BACKBONE_NAMES.to_a)
   sc_names = ref_residue.atoms.select(&.heavy?).map(&.name).reject { |n| BACKBONE_NAMES.includes?(n) }
   sc_rmsf = residue_rmsf(instances, sc_names)
   ResidueMobility.new(
     resid: resid,
     name: ref_residue.name,
-    sec: ref_residue.sec.type.code.to_s,
+    sec: structures[0].dig(resid).sec.type.code.to_s,
     bb_rmsf: bb_rmsf,
     sc_rmsf: sc_rmsf,
     mobile: false,

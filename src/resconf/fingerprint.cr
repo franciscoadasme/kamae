@@ -1,8 +1,9 @@
 # UnitAssignment — one fingerprint unit/column across the ensemble:
-#   resids = residues in the unit; labels[i] = state of structures[i]
+#   resids = residues in the unit; labels[i] = state of structures[i], or
+#   nil if any unit residue is unresolved in it
 #
 # Fingerprint — joint state code of one structure (a matrix row):
-#   states[j] = state of column j
+#   states[j] = state of column j, or nil if unknown
 #
 # StateMatrix — cells are conformational state IDs (structure × unit).
 #   columns = UnitAssignments, rows = Fingerprints
@@ -12,13 +13,17 @@ RARE_FLOOR = 0.05
 
 # Conformational assignment of one unit (or column) over the ensemble.
 struct UnitAssignment
-  include Indexable(Int32)
+  include Indexable(Int32?)
 
   getter resids : Array(ResId)
 
   delegate size, unsafe_fetch, to: @labels
 
-  def initialize(@resids : Array(ResId), @labels : Array(Int32))
+  def initialize(@resids : Array(ResId), @labels : Array(Int32?))
+  end
+
+  def self.new(resids : Array(ResId), labels : Array(Int32)) : self
+    new resids, labels.map(&.as(Int32?))
   end
 
   # Column name derived from the unit residues (A:64 or A:12+A:14).
@@ -27,18 +32,31 @@ struct UnitAssignment
   end
 
   def n_states : Int32
-    (@labels.max? || 0) + 1
+    (@labels.compact.max? || 0) + 1
   end
 
   def state_counts : Array(Int32)
     counts = Array.new(n_states, 0)
-    @labels.each { |c| counts[c] += 1 }
+    @labels.each { |c| counts[c] += 1 if c }
     counts
   end
 
-  # Shannon entropy H of the label distribution across structures (bits).
+  # Number of structures with a known state.
+  def n_known : Int32
+    @labels.count { |c| !c.nil? }
+  end
+
+  # Spreads the labels of a clustering of a subset of structures (*indices*)
+  # over an ensemble of *size*; the rest are unknown (nil).
+  def expand(indices : Array(Int32), size : Int32) : UnitAssignment
+    labels = Array(Int32?).new(size, nil)
+    indices.each_with_index { |i, k| labels[i] = @labels[k] }
+    UnitAssignment.new(@resids, labels)
+  end
+
+  # Shannon entropy H of the known-state distribution (bits).
   def entropy : Float64
-    n = @labels.size.to_f
+    n = n_known.to_f
     return 0.0 if n <= 0
     h = 0.0
     state_counts.each do |c|
@@ -56,20 +74,22 @@ struct UnitAssignment
   # Renumber labels 0..k-1 by descending population (#structures per state).
   def relabel_by_population : UnitAssignment
     counts = Hash(Int32, Int32).new(0)
-    @labels.each { |c| counts[c] += 1 }
+    @labels.each { |c| counts[c] += 1 if c }
     order = counts.keys.sort_by { |c| {-counts[c], c} }
     remap = {} of Int32 => Int32
     order.each_with_index { |c, i| remap[c] = i }
-    UnitAssignment.new(@resids, @labels.map { |c| remap[c] })
+    UnitAssignment.new(@resids, @labels.map { |c| c && remap[c] })
   end
 
-  # Reassign rare states (< *floor* of structures) to the nearest kept centroid.
+  # Reassign rare states (< *floor* of known structures) to the nearest kept
+  # centroid.
   def merge_rare(dmat : HClust::DistanceMatrix, floor : Float64) : UnitAssignment
     n = @labels.size
     counts = state_counts
+    n_known = counts.sum
     nst = counts.size
 
-    kept = (0...nst).select { |c| counts[c] / n >= floor }
+    kept = (0...nst).select { |c| counts[c] / n_known >= floor }
     if kept.empty?
       maxc = counts.max
       kept = (0...nst).select { |c| counts[c] == maxc }
@@ -85,7 +105,8 @@ struct UnitAssignment
     kept_set = Set.new(kept)
     merged = @labels.dup
     (0...n).each do |i|
-      next if kept_set.includes?(merged[i])
+      state = merged[i]
+      next if state.nil? || kept_set.includes?(state)
       merged[i] = kept.min_by { |c| dmat[i, centroids[c]] }
     end
     UnitAssignment.new(@resids, merged).relabel_by_population
@@ -112,12 +133,15 @@ struct UnitAssignment
     assignment
   end
 
-  # Joint Shannon entropy H(self, other) for two columns (equal ensemble length).
+  # Joint Shannon entropy H(self, other) for two columns (equal ensemble
+  # length) over the structures known in both.
   def joint_entropy(other : UnitAssignment) : Float64
-    n = @labels.size.to_f
-    return 0.0 if n <= 0
     counts = Hash(Tuple(Int32, Int32), Int32).new(0)
-    @labels.zip(other) { |x, y| counts[{x, y}] += 1 }
+    @labels.zip(other) do |x, y|
+      counts[{x, y}] += 1 if x && y
+    end
+    n = counts.values.sum.to_f
+    return 0.0 if n <= 0
     h = 0.0
     counts.each_value do |c|
       p = c / n
@@ -126,26 +150,35 @@ struct UnitAssignment
     h
   end
 
-  # NMI = I / sqrt(H_a H_b), with I = H_a + H_b - H_joint. 0 if either is constant.
+  # NMI = I / sqrt(H_a H_b), with I = H_a + H_b - H_joint, over the
+  # structures known in both columns. 0 if either is constant.
   def normalized_mutual_information(other : UnitAssignment) : Float64
-    ha = entropy
-    hb = other.entropy
+    shared = (0...size).select { |i| self[i] && other[i] }
+    a = UnitAssignment.new(@resids, shared.map { |i| self[i] })
+    b = UnitAssignment.new(other.resids, shared.map { |i| other[i] })
+    ha = a.entropy
+    hb = b.entropy
     return 0.0 if ha == 0.0 || hb == 0.0
-    (ha + hb - joint_entropy(other)) / Math.sqrt(ha * hb)
+    (ha + hb - a.joint_entropy(b)) / Math.sqrt(ha * hb)
   end
 end
 
 # Joint conformation code of one structure across fingerprint columns (matrix row).
 struct Fingerprint
-  include Indexable(Int32)
+  include Indexable(Int32?)
 
   delegate size, unsafe_fetch, to: @states
 
-  def initialize(@states : Array(Int32))
+  def initialize(@states : Array(Int32?))
   end
 
   def key : String
     @states.join(',')
+  end
+
+  # True if the state of every column is known.
+  def complete? : Bool
+    @states.none?(&.nil?)
   end
 end
 

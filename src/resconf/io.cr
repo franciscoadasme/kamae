@@ -36,12 +36,29 @@ def write_binding_site(prefix : Path, resids : Array(ResId)) : Nil
   puts "Binding site (#{resids.size} residues) dumped to #{path}"
 end
 
+def report_unresolved(unresolved : Hash(ResId, Array(String)), dropped : Array(ResId), n_structures : Int32) : Nil
+  Resconf::Log.warn do
+    String.build do |io|
+      io << "Ignored incomplete or missing site residues in some structures:\n"
+      unresolved.each do |rid, titles|
+        io << "  " << rid << " in " << titles.first(5).join(' ')
+        io << " +" << titles.size - 5 << " more" if titles.size > 5
+        io << " (dropped: unresolved in " << titles.size << " of " << n_structures << ')' if dropped.includes?(rid)
+        io << '\n'
+      end
+      io << "Consider filling missing atoms and residues (e.g., PDBFixer, MODELLER, or Schrödinger's Protein Preparation Wizard)"
+    end
+  end
+end
+
 def write_fingerprints(prefix : Path, structures : Array(Chem::Structure), selection : Selection) : Nil
   matrix = selection.matrix
   File.write "#{prefix}_reslist.csv", matrix.column_labels.join(',') + "\n"
 
   header = ["receptor"] + matrix.column_labels
-  table = structures.map(&.title).zip(selection.fingerprints).map { |title, fp| [title] + fp.to_a }
+  table = structures.map(&.title).zip(selection.fingerprints).map do |title, fp|
+    [title] + fp.map { |state| state.try(&.to_s) || "?" }
+  end
   write_csv "#{prefix}_conf.csv", header, table
 
   probs = conf_probabilities(matrix)

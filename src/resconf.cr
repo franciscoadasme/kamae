@@ -32,6 +32,9 @@
 #
 # Fingerprint RMSD is in-place (no per-residue QCP). Side-chain symmetry uses
 # chem.cr templates. Ligand detection follows Maestro LigandParameters.
+# Residues missing a template heavy atom (or absent) are ignored in that
+# structure by every step (unknown state); those ignored in most structures
+# are dropped from the site.
 #
 # Library entry point; the command-line tool is src/cli.cr.
 #
@@ -47,6 +50,10 @@ require "./resconf/chem_ext"
 require "./resconf/resid"
 
 VERSION = "0.1.0"
+
+module Resconf
+  Log = ::Log.for("resconf")
+end
 
 class Options
   getter residues : Array(ResId) = [] of ResId

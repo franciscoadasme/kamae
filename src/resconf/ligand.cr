@@ -41,7 +41,7 @@ end
 def contacts_ligand?(resid : ResId, structures : Array(Chem::Structure), site_resids : Array(ResId), radius : Float64) : Bool
   r2 = radius * radius
   structures.any? do |structure|
-    prot = structure.dig?(resid)
+    prot = resolve_residue(structure, resid)
     next false unless prot
     ligands = site_ligand_heavies(structure, site_resids)
     next false if ligands.empty?
@@ -60,7 +60,7 @@ def sidechain_ligand_contacts(resid : ResId, structures : Array(Chem::Structure)
     ligands = site_ligand_heavies(structure, site_resids)
     next if ligands.empty?
     n_holo += 1
-    prot = structure.dig?(resid)
+    prot = resolve_residue(structure, resid)
     next unless prot
     sidechain = sidechain_heavies(prot)
     next if sidechain.empty?
@@ -79,7 +79,7 @@ end
 
 private def site_heavy_atoms(structure : Chem::Structure, site_resids : Array(ResId)) : Array(Chem::Atom)
   site_resids.flat_map do |rid|
-    res = structure.dig?(rid)
+    res = resolve_residue(structure, rid)
     res ? res.atoms.select(&.heavy?).to_a : [] of Chem::Atom
   end
 end

@@ -8,7 +8,7 @@ def select_representatives(
   clustered_resids : Array(ResId),
   opts : Options,
 ) : Array(Chem::Structure)
-  # 1. One site-RMSD medoid per unique fingerprint code.
+  # 1. One site-RMSD medoid per unique complete fingerprint code.
   pool = fingerprint_medoid_indices(structures, fingerprints, clustered_resids)
   pool_structs = pool.map { |i| structures[i] }
   pool_fps = pool.map { |i| fingerprints[i] }
@@ -28,18 +28,23 @@ def select_representatives(
   local = graph_redundancy_indices(pool_structs, clustered_resids, opts.cutoff, pinned)
   selected = local.map { |li| pool[li] }.to_set
 
-  # 4. Restore a medoid for any per-column state lost in step 3 (farthest first).
+  # 4. Restore a medoid for any per-column state lost in step 3 (farthest
+  #    first). A state seen only in incomplete fingerprints falls back to
+  #    any structure with it.
   unless fingerprints.empty? || fingerprints[0].empty?
     ncols = fingerprints[0].size
     all_states = Array.new(ncols) { Set(Int32).new }
-    fingerprints.each { |fp| ncols.times { |j| all_states[j] << fp[j] } }
+    fingerprints.each { |fp| ncols.times { |j| fp[j].try { |state| all_states[j] << state } } }
 
     ncols.times do |j|
       covered = Set(Int32).new
-      selected.each { |i| covered << fingerprints[i][j] }
+      selected.each { |i| fingerprints[i][j].try { |state| covered << state } }
       missing = all_states[j] - covered
       missing.each do |state|
         candidates = pool.select { |i| fingerprints[i][j] == state && !selected.includes?(i) }
+        if candidates.empty?
+          candidates = (0...n).select { |i| fingerprints[i][j] == state && !selected.includes?(i) }
+        end
         next if candidates.empty?
         selected << farthest_from_selected(candidates, selected, structures, clustered_resids)
       end
@@ -49,13 +54,14 @@ def select_representatives(
   selected.to_a.sort.map { |i| structures[i] }
 end
 
-# Site-RMSD centroid within each fingerprint-code group.
+# Site-RMSD centroid within each complete fingerprint-code group.
 private def fingerprint_medoid_indices(
   structures : Array(Chem::Structure),
   fingerprints : Array(Fingerprint),
   clustered_resids : Array(ResId),
 ) : Array(Int32)
   (0...structures.size)
+    .select { |i| fingerprints[i].complete? }
     .group_by { |i| fingerprints[i].key }
     .map do |_, indices|
       dmat = HClust::DistanceMatrix.new(structures[indices]) do |a, b|
@@ -124,8 +130,8 @@ end
 private def mismatch_count(a : Chem::Structure, b : Chem::Structure, resids : Array(ResId), cutoff : Float64) : Int32
   n = 0
   resids.each do |rid|
-    ra = a.dig?(rid)
-    rb = b.dig?(rid)
+    ra = resolve_residue(a, rid)
+    rb = resolve_residue(b, rid)
     next unless ra && rb
     n += 1 if residue_rmsd(ra, rb) > cutoff
   end

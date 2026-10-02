@@ -1,6 +1,13 @@
 require "option_parser"
 require "./resconf"
 
+Log.setup_from_env(
+  default_level: :warn,
+  backend: Log::IOBackend.new(STDERR, dispatcher: :sync, formatter: Log::Formatter.new { |entry, io|
+    io << entry.severity.label.downcase << ": " << entry.message
+  }),
+)
+
 opts = Options.new
 output = nil.as(Path?)
 OptionParser.parse do |parser|
@@ -49,6 +56,15 @@ puts "Loaded #{structures.size} structures"
 if opts.residues.empty?
   opts.residues.concat detect_binding_site(structures)
   puts "Detected binding site (#{opts.residues.size} residues)"
+end
+
+unresolved = find_unresolved_residues(structures, opts.residues)
+unless unresolved.empty?
+  max_unresolved = (1 - MIN_RESOLVED_FRAC) * structures.size
+  dropped = unresolved.select { |_, titles| titles.size > max_unresolved }.keys
+  opts.residues.reject! &.in?(dropped)
+  report_unresolved unresolved, dropped, structures.size
+  abort "error: no site residue resolved in most structures" if opts.residues.empty?
 end
 
 unless opts.prealigned

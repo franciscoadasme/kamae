@@ -46,17 +46,25 @@ end
 # Residues whose raw per-residue clustering (before any filter) yields more
 # than one state. GLY and PRO are never clustered.
 def variable_residues(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : Array(ResId)
-  return [] of ResId if structures.size <= 1
   resids.select do |rid|
-    instances = structures.map &.dig(rid)
-    next false if NON_CLUSTERABLE.includes?(instances[0].name)
+    instances = structures.compact_map { |s| resolve_residue(s, rid) }
+    next false if instances.size <= 1 || NON_CLUSTERABLE.includes?(instances[0].name)
     dmat = HClust::DistanceMatrix.new(instances) { |a, b| residue_rmsd(a, b) }
     HClust.linkage(dmat, opts.rule).labels(opts.cutoff).uniq.size > 1
   end
 end
 
-# Cluster one fingerprint unit across the ensemble. Returns nil if dropped.
+# Cluster one fingerprint unit across the structures where all its residues
+# are resolved; the state of the rest is unknown (nil). Returns nil if dropped.
 def cluster_unit(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : UnitAssignment?
+  known = (0...structures.size).select do |i|
+    resids.all? { |rid| resolve_residue(structures[i], rid) }
+  end
+  return nil if known.size <= 1
+  cluster_resolved_unit(known.map { |i| structures[i] }, resids, opts).try &.expand(known, structures.size)
+end
+
+private def cluster_resolved_unit(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : UnitAssignment?
   if resids.size == 1
     instances = structures.map &.dig(resids[0])
     return nil if NON_CLUSTERABLE.includes?(instances[0].name) || instances.size <= 1
@@ -106,12 +114,9 @@ def build_state_matrix(structures : Array(Chem::Structure), opts : Options, unit
 end
 
 def conf_probabilities(matrix : StateMatrix) : Array(Array(Float64))
-  return [] of Array(Float64) if matrix.empty?
-  n_struct = matrix[0].size.to_f
   matrix.map do |col|
-    counts = Array.new(col.n_states, 0.0)
-    col.each { |st| counts[st] += 1 }
-    counts.map { |c| c / n_struct }
+    n_known = col.n_known.to_f
+    col.state_counts.map { |c| c / n_known }
   end
 end
 
@@ -141,7 +146,7 @@ private def merge_ligand_away_states(
   faces_frame.fill(false) if faces_frame.count(true) < min_frames
   nst = assignment.n_states
   state_faces = Array.new(nst, false)
-  assignment.each_with_index { |st, i| state_faces[st] = true if faces_frame[i] }
+  assignment.each_with_index { |st, i| state_faces[st] = true if st && faces_frame[i] }
   n_face = state_faces.count(true)
   n_away = nst - n_face
 
@@ -164,7 +169,7 @@ private def merge_ligand_away_states(
   counts = assignment.state_counts
   away = (0...nst).select { |c| !state_faces[c] }
   target = away.max_by { |c| {counts[c], -c} }
-  merged = UnitAssignment.new(assignment.resids, assignment.map { |c| state_faces[c] ? c : target }).relabel_by_population
+  merged = UnitAssignment.new(assignment.resids, assignment.map { |c| c && (state_faces[c] ? c : target) }).relabel_by_population
   return nil unless merged.n_states > 1
   {merged, dmat}
 end

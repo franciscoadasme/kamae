@@ -3,13 +3,14 @@
 # Per structure: each ligand molecule → protein residues within SITE_RADIUS
 # (a pocket). Pockets sharing most residues (overlap coefficient) are linked
 # across the ensemble; the component seen in the most structures is the site.
-# The site is the union of its pockets, kept only where the residue exists
-# with the same type in every structure.
+# The site is the union of its pockets, kept only where the residue has the
+# same type in every structure that has it. Incomplete residues are ignored.
 
 require "./ligand"
 
-SITE_RADIUS    = 5.0
-POCKET_OVERLAP = 0.5
+SITE_RADIUS       = 5.0
+POCKET_OVERLAP    = 0.5
+MIN_RESOLVED_FRAC = 0.5
 
 # Protonation/state variants (Maestro, Amber) of standard amino acids.
 TYPE_ALIASES = {
@@ -40,15 +41,26 @@ def detect_binding_site(structures : Array(Chem::Structure)) : Array(ResId)
   primary_site(pockets).each { |pocket| candidates.concat pocket.shell }
 
   site, dropped = split_equivalent(structures, candidates.to_a)
-  abort "error: no site residues shared by all structures" if site.empty?
-  puts "Dropped site residues missing or mismatched in some structures: #{dropped.map(&.to_s).join(',')}" unless dropped.empty?
+  abort "error: no site residues of the same type in all structures" if site.empty?
+  unless dropped.empty?
+    Resconf::Log.warn { "Dropped site residues of a different type in some structures: #{dropped.join(',')}" }
+  end
   site.sort_by! { |r| {r.chain.ord, r.number, (r.insertion_code || ' ').ord} }
 end
 
-# Superimposes *structures* on the CA atoms of the *site* residues present
+# Site residues unresolved (absent or incomplete) in some structures, with
+# the titles of those structures.
+def find_unresolved_residues(structures : Array(Chem::Structure), site : Array(ResId)) : Hash(ResId, Array(String))
+  site.each_with_object({} of ResId => Array(String)) do |rid, unresolved|
+    titles = structures.reject { |s| resolve_residue(s, rid) }.map(&.title)
+    unresolved[rid] = titles unless titles.empty?
+  end
+end
+
+# Superimposes *structures* on the CA atoms of the *site* residues resolved
 # in all of them (see `Chem.align_ensemble`).
 def align_on_site(structures : Array(Chem::Structure), site : Array(ResId)) : Nil
-  resids = site.select { |rid| structures.all?(&.dig?(rid).try(&.["CA"]?)) }
+  resids = site.select { |rid| structures.all? { |s| resolve_residue(s, rid) } }
   Chem.align_ensemble(structures) { |s| Chem::AtomView.new(resids.map { |rid| s.dig(rid)["CA"] }) }
 end
 
@@ -58,7 +70,7 @@ private def protein_shell(structure : Chem::Structure, ligand : Chem::AtomView, 
   lig_residues = ligand.map(&.residue).to_set
   shell = Set(ResId).new
   structure.residues.each do |res|
-    next unless res.protein?
+    next unless res.protein? && res.complete?
     next if res.in?(lig_residues)
     hit = res.atoms.any? do |pa|
       pa.heavy? && lig_heavies.any? { |la| pa.pos.distance2(la.pos) <= r2 }
@@ -98,11 +110,10 @@ private def canonical_resname(name : String) : String
   TYPE_ALIASES[name]? || name
 end
 
-# Splits *resids* into those present with the same (canonical) type in every
-# structure and the rest.
+# Splits *resids* into those with the same (canonical) type in every
+# structure that has them and the rest.
 private def split_equivalent(structures : Array(Chem::Structure), resids : Array(ResId)) : {Array(ResId), Array(ResId)}
   resids.partition do |rid|
-    names = structures.map { |s| s.dig?(rid).try { |r| canonical_resname(r.name) } }
-    names.none?(&.nil?) && names.uniq.size == 1
+    structures.compact_map { |s| s.dig?(rid).try { |r| canonical_resname(r.name) } }.uniq.size == 1
   end
 end

@@ -44,6 +44,9 @@ resconf -o out/target structures/*.pdb
 resconf -r site.txt --prealigned -o out/target ensemble.maegz
 ```
 
+Warnings (e.g., ignored incomplete residues) are written to standard error;
+set `LOG_LEVEL=error` to silence them.
+
 ### Outputs
 
 - `{prefix}_binding-site.txt` — site residues used (comma-separated)
@@ -67,7 +70,14 @@ resconf -r site.txt --prealigned -o out/target ensemble.maegz
      atoms). Pockets sharing at least half of the smaller one are linked
      across the ensemble, and the group seen in the most structures is the
      binding site (union of its pockets).
-   - Residues missing or of a different type in any structure are dropped.
+   - Residues of a different type in any structure are dropped.
+   - A residue missing a heavy atom of its template, or absent, is ignored
+     in that structure by every later step: it gets no state, and the
+     structure cannot represent a fingerprint that needs it. Residues
+     ignored in more than half of the structures are dropped from the
+     site. Ignored residues are reported; fill them beforehand (e.g.,
+     PDBFixer, MODELLER, or Schrödinger's Protein Preparation Wizard) for
+     a complete analysis.
 2. **Alignment.** Unless `--prealigned`, the site Cα atoms of every
    structure are superimposed on their ensemble mean, iteratively
    down-weighting mobile atoms (Gaussian weights of the per-atom deviation,
@@ -94,7 +104,9 @@ resconf -r site.txt --prealigned -o out/target ensemble.maegz
 6. **Representatives.** One site-RMSD medoid is kept per unique
    fingerprint. Frequent fingerprints (≥ 5 %) are always kept, the rest
    are reduced by structural redundancy, and any medoid needed to cover
-   every state of every column is restored.
+   every state of every column is restored. Only structures with every
+   state known are medoids; one with an unknown state is restored only if
+   no other structure has that state.
 
 Assumptions: residue numbering is consistent across the ensemble, and
 holo structures are preferred for site detection. Side-chain symmetry
