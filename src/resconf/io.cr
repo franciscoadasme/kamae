@@ -51,6 +51,19 @@ def report_unresolved(unresolved : Hash(ResId, Array(String)), dropped : Array(R
   end
 end
 
+def report_unassigned(unassigned : Hash(String, Array(String))) : Nil
+  Resconf::Log.warn do
+    String.build do |io|
+      io << "Left rare-state structures unassigned (farther than " << RARE_MERGE_MAX
+      io << " Å from every member of the nearest kept state):"
+      unassigned.each do |label, titles|
+        io << "\n  " << label << " in " << titles.first(5).join(' ')
+        io << " +" << titles.size - 5 << " more" if titles.size > 5
+      end
+    end
+  end
+end
+
 def write_fingerprints(prefix : Path, structures : Array(Chem::Structure), selection : Selection) : Nil
   matrix = selection.matrix
   File.write "#{prefix}_reslist.csv", matrix.column_labels.join(',') + "\n"

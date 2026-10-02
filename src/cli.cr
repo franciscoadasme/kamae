@@ -79,6 +79,8 @@ write_binding_site prefix, opts.residues
 
 puts "Clustering at #{opts.cutoff} A (#{opts.rule.to_s.downcase})..."
 selection = select_receptors(structures, opts)
+unassigned = find_unassigned_outliers(structures, selection.matrix)
+report_unassigned unassigned unless unassigned.empty?
 puts "Found #{selection.candidates.size} of #{opts.residues.size} site residues with multiple conformations"
 puts "Found #{selection.matrix.size} fingerprint columns with two or more distinct conformations"
 write_fingerprints prefix, structures, selection

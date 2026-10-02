@@ -1,6 +1,7 @@
 # UnitAssignment — one fingerprint unit/column across the ensemble:
 #   resids = residues in the unit; labels[i] = state of structures[i], or
-#   nil if any unit residue is unresolved in it
+#   nil if any unit residue is unresolved in it or it is a rare-state
+#   outlier left unassigned (see `merge_rare`)
 #
 # Fingerprint — joint state code of one structure (a matrix row):
 #   states[j] = state of column j, or nil if unknown
@@ -10,6 +11,9 @@
 
 # Frequency floor for rare vs frequent states / joint fingerprints (5%).
 RARE_FLOOR = 0.05
+# Maximum distance (Å) from a rare-state structure to the nearest member of
+# its merge target; farther structures are left unassigned.
+RARE_MERGE_MAX = 2.5
 
 # Conformational assignment of one unit (or column) over the ensemble.
 struct UnitAssignment
@@ -81,9 +85,11 @@ struct UnitAssignment
     UnitAssignment.new(@resids, @labels.map { |c| c && remap[c] })
   end
 
-  # Reassign rare states (< *floor* of known structures) to the nearest kept
-  # centroid.
-  def merge_rare(dmat : HClust::DistanceMatrix, floor : Float64) : UnitAssignment
+  # Reassign each structure in a rare state (< *floor* of known structures)
+  # to the kept state with the nearest medoid, provided it lies within
+  # *max_distance* of at least one member of that state; otherwise it is left
+  # unassigned (nil).
+  def merge_rare(dmat : HClust::DistanceMatrix, floor : Float64, max_distance : Float64) : UnitAssignment
     n = @labels.size
     counts = count_states
     n_known = counts.sum
@@ -96,10 +102,11 @@ struct UnitAssignment
     end
     return relabel_by_population if kept.size == nst
 
+    members = {} of Int32 => Array(Int32)
     centroids = {} of Int32 => Int32
     kept.each do |c|
-      members = (0...n).select { |i| @labels[i] == c }
-      centroids[c] = members[dmat[members].centroid]
+      members[c] = (0...n).select { |i| @labels[i] == c }
+      centroids[c] = members[c][dmat[members[c]].centroid]
     end
 
     kept_set = Set.new(kept)
@@ -107,7 +114,9 @@ struct UnitAssignment
     (0...n).each do |i|
       state = merged[i]
       next if state.nil? || kept_set.includes?(state)
-      merged[i] = kept.min_by { |c| dmat[i, centroids[c]] }
+      target = kept.min_by { |c| dmat[i, centroids[c]] }
+      d_near = members[target].min_of { |k| dmat[i, k] }
+      merged[i] = d_near <= max_distance ? target : nil
     end
     UnitAssignment.new(@resids, merged).relabel_by_population
   end

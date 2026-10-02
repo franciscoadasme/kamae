@@ -76,8 +76,9 @@ private def cluster_resolved_unit(structures : Array(Chem::Structure), resids : 
   # Hierarchical clustering → discrete conformational states.
   assignment = UnitAssignment.new(resids, HClust.linkage(dmat, opts.rule).labels(opts.cutoff))
 
-  # Merge states present in < RARE_FLOOR of the ensemble.
-  assignment = assignment.merge_rare(dmat, RARE_FLOOR)
+  # Merge states present in < RARE_FLOOR of the ensemble (outliers beyond
+  # RARE_MERGE_MAX are left unassigned).
+  assignment = assignment.merge_rare(dmat, RARE_FLOOR, RARE_MERGE_MAX)
   return nil unless assignment.n_states > 1
 
   # Drop frozen columns (almost no conformational diversity).
@@ -111,6 +112,18 @@ def build_state_matrix(structures : Array(Chem::Structure), opts : Options, unit
     end
   end
   StateMatrix.new(columns)
+end
+
+# Titles of the structures left unassigned per column (label) by
+# `UnitAssignment#merge_rare`. Unresolved residues are the only other source
+# of unknown states, so these are the unknown states of fully resolved units.
+def find_unassigned_outliers(structures : Array(Chem::Structure), matrix : StateMatrix) : Hash(String, Array(String))
+  matrix.each_with_object({} of String => Array(String)) do |col, outliers|
+    titles = (0...structures.size)
+      .select { |i| col[i].nil? && col.resids.all? { |rid| resolve_residue(structures[i], rid) } }
+      .map { |i| structures[i].title }
+    outliers[col.label] = titles unless titles.empty?
+  end
 end
 
 def compute_conf_probabilities(matrix : StateMatrix) : Array(Array(Float64))
@@ -177,7 +190,7 @@ end
 private def cluster_backbone_assignment(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : UnitAssignment
   dmat = HClust::DistanceMatrix.new(structures) { |a, b| backbone_site_rmsd(a, b, resids) }
   labels = HClust.linkage(dmat, opts.rule).labels(opts.cutoff)
-  UnitAssignment.new(resids, labels).merge_rare(dmat, RARE_FLOOR)
+  UnitAssignment.new(resids, labels).merge_rare(dmat, RARE_FLOOR, RARE_MERGE_MAX)
 end
 
 # True if any side-chain heavy atom of *resids* lies within FACE_CUTOFF of the

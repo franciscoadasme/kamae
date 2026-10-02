@@ -15,7 +15,9 @@
 #      do not contact ligand are dropped from the fingerprint.
 # 3. For each unit, cluster in-place heavy-atom conformations (complete / 2 Å
 #    by default) into a UnitAssignment (residues + one label per structure), then:
-#    - Merge rare states (< 5% of structures) into the nearest kept centroid.
+#    - Merge rare states (< 5% of structures) into the kept state with the
+#      nearest medoid; a structure farther than 2.5 Å from every member of
+#      that state is left unassigned (unknown state, `?`).
 #    - Drop the unit if the Shannon effective state count n_eff is too low
 #      (frozen) or, after later steps, too high without ligand contact
 #      (exposed rotamers: drop or cap).

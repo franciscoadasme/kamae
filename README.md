@@ -44,7 +44,8 @@ resconf -o out/target structures/*.pdb
 resconf -r site.txt --prealigned -o out/target ensemble.maegz
 ```
 
-Warnings (e.g., ignored incomplete residues) are written to standard error;
+Warnings (e.g., ignored incomplete residues, or structures left unassigned
+as outliers) are written to standard error;
 set `LOG_LEVEL=error` to silence them.
 
 ### Outputs
@@ -91,7 +92,10 @@ set `LOG_LEVEL=error` to silence them.
    dropped.
 4. **Unit states.** Each unit's in-place heavy-atom conformations are
    clustered (hierarchical, `--linkage` at `--cutoff`). Then:
-   - rare states (< 5 % of structures) are merged into the nearest one;
+   - each structure in a rare state (< 5 % of structures) is merged into
+     the kept state with the nearest medoid only if it lies within 2.5 Å
+     of at least one member of that state; otherwise it is left unassigned
+     (`?`) and reported;
    - units with too few effective states are dropped, and those with too
      many without ligand contact are dropped or capped;
    - side-chain states that never face the ligand (side chain within
