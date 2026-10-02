@@ -1,21 +1,65 @@
 BACKBONE_NAMES = {"N", "CA", "C", "O"}
 FIT_BB_NAMES   = {"N", "CA", "C"}
 
+# Atom pairs that X-ray data rarely tell apart, so either assignment may be
+# deposited: the amide O and N of Asn and Gln, and the ring ND1/CD2 and
+# CE1/NE2 of His.
+FLIPPABLE_ATOM_PAIRS = {
+  "ASN" => [{"OD1", "ND2"}],
+  "GLN" => [{"OE1", "NE2"}],
+  "HIS" => [{"ND1", "CD2"}, {"CE1", "NE2"}],
+  "HID" => [{"ND1", "CD2"}, {"CE1", "NE2"}],
+  "HSD" => [{"ND1", "CD2"}, {"CE1", "NE2"}],
+  "HIE" => [{"ND1", "CD2"}, {"CE1", "NE2"}],
+  "HSE" => [{"ND1", "CD2"}, {"CE1", "NE2"}],
+  "HIP" => [{"ND1", "CD2"}, {"CE1", "NE2"}],
+  "HSP" => [{"ND1", "CD2"}, {"CE1", "NE2"}],
+}
+
 # The residue *rid* of *structure* if present and complete, else nil.
 # Unresolved residues are ignored by every step of the pipeline.
 def resolve_residue(structure : Chem::Structure, rid : ResId) : Chem::Residue?
   structure.dig?(rid).try { |residue| residue if residue.complete? }
 end
 
-# In-place heavy-atom RMSD with residue-template symmetry. Structures must
-# already be site-aligned; large values usually mean a bad alignment.
-def residue_rmsd(a : Chem::Residue, b : Chem::Residue) : Float64
-  atoms_a = a.atoms.select(&.heavy?)
-  indexed_b = b.atoms.select(&.heavy?).index_by(&.name)
-  atoms_b = atoms_a.map do |atom|
-    indexed_b[atom.name]? || abort "error: missing atom #{a.spec}:#{atom.name} in #{b.structure.title}"
+# Pairs the heavy atoms of residue *a* with those of residue *b* by name.
+# The flippable atom pairs of *b* (see `FLIPPABLE_ATOM_PAIRS`) are swapped
+# if that lowers the in-place deviation, unless both residues have hydrogens
+# (atoms assumed placed correctly, e.g., prepared structures). Atoms missing
+# from either residue are skipped.
+def pair_heavy_atoms_resolving_flips(a : Chem::Residue, b : Chem::Residue) : {Array(Chem::Atom), Array(Chem::Atom)}
+  atoms_a = [] of Chem::Atom
+  atoms_b = [] of Chem::Atom
+  a.atoms.each do |atom|
+    next unless atom.heavy? && (match = b[atom.name]?) && match.heavy?
+    atoms_a << atom
+    atoms_b << match
   end
-  rmsd = atoms_a.rmsd atoms_b, use_symmetry: true
+
+  # Hydrogens mean a prepared or high-resolution structure, whose amide/ring
+  # orientation was assigned deliberately rather than guessed from density.
+  orientation_trusted = a.atoms.any?(&.hydrogen?) && b.atoms.any?(&.hydrogen?)
+  if !orientation_trusted && a.name == b.name && (pairs = FLIPPABLE_ATOM_PAIRS[a.name]?)
+    swap = {} of String => String
+    pairs.each do |(x, y)|
+      swap[x] = y
+      swap[y] = x
+    end
+    flipped = atoms_b.map { |atom| swap[atom.name]?.try { |name| b[name]? } || atom }
+    dev = atoms_a.zip(atoms_b).sum { |x, y| x.pos.distance2(y.pos) }
+    dev_flipped = atoms_a.zip(flipped).sum { |x, y| x.pos.distance2(y.pos) }
+    atoms_b = flipped if dev_flipped < dev
+  end
+
+  {atoms_a, atoms_b}
+end
+
+# In-place heavy-atom RMSD with residue-template symmetry and flippable
+# Asn/Gln/His atoms (see `pair_heavy_atoms_resolving_flips`). Structures
+# must already be site-aligned; large values usually mean a bad alignment.
+def residue_rmsd(a : Chem::Residue, b : Chem::Residue) : Float64
+  atoms_a, atoms_b = pair_heavy_atoms_resolving_flips(a, b)
+  rmsd = Chem::AtomView.new(atoms_a).rmsd Chem::AtomView.new(atoms_b), use_symmetry: true
   abort "error: RMSD too large for #{a}; check protein alignment" if rmsd > 20
   rmsd
 end
@@ -47,11 +91,9 @@ def site_rmsd(a : Chem::Structure, b : Chem::Structure, resids : Array(ResId)) :
     ra = resolve_residue(a, resid)
     rb = resolve_residue(b, resid)
     next unless ra && rb
-    index = rb.atoms.select(&.heavy?).index_by(&.name)
-    ra.atoms.select(&.heavy?).each do |atom|
-      atoms_a << atom
-      atoms_b << (index[atom.name]? || abort "error: missing atom #{resid}:#{atom.name} in #{b.title}")
-    end
+    matched_a, matched_b = pair_heavy_atoms_resolving_flips(ra, rb)
+    atoms_a.concat matched_a
+    atoms_b.concat matched_b
   end
   return 0.0 if atoms_a.empty?
   Chem::AtomView.new(atoms_a).rmsd Chem::AtomView.new(atoms_b), use_symmetry: true

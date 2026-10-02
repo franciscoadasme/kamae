@@ -31,7 +31,9 @@
 #    restore any medoid needed so every per-column state remains covered.
 #
 # Fingerprint RMSD is in-place (no per-residue QCP). Side-chain symmetry uses
-# chem.cr templates. Ligand detection follows Maestro LigandParameters.
+# chem.cr templates; flippable Asn/Gln/His atoms take the closer assignment
+# unless both residues have hydrogens.
+# Ligand detection follows Maestro LigandParameters.
 # Residues missing a template heavy atom (or absent) are ignored in that
 # structure by every step (unknown state); those ignored in most structures
 # are dropped from the site.

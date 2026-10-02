@@ -110,4 +110,7 @@ set `LOG_LEVEL=error` to silence them.
 
 Assumptions: residue numbering is consistent across the ensemble, and
 holo structures are preferred for site detection. Side-chain symmetry
-comes from chem.cr residue templates.
+comes from chem.cr residue templates. The Asn/Gln amide and His ring atoms
+that crystallography cannot tell apart are paired in whichever assignment
+gives the lower RMSD, unless both residues have hydrogens (e.g., prepared
+structures), whose assignment is taken as is.
