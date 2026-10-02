@@ -30,15 +30,15 @@ record Pocket, index : Int32, ligand : Chem::AtomView, shell : Set(ResId)
 def detect_binding_site(structures : Array(Chem::Structure)) : Array(ResId)
   pockets = [] of Pocket
   structures.each_with_index do |structure, i|
-    ligand_molecules(structure).each do |lig|
-      shell = protein_shell(structure, lig, SITE_RADIUS)
+    find_ligand_molecules(structure).each do |lig|
+      shell = find_protein_shell(structure, lig, SITE_RADIUS)
       pockets << Pocket.new(i, lig, shell) unless shell.empty?
     end
   end
   abort "error: no ligands found (need holo structures)" if pockets.empty?
 
   candidates = Set(ResId).new
-  primary_site(pockets).each { |pocket| candidates.concat pocket.shell }
+  find_primary_site(pockets).each { |pocket| candidates.concat pocket.shell }
 
   site, dropped = split_equivalent(structures, candidates.to_a)
   abort "error: no site residues of the same type in all structures" if site.empty?
@@ -64,7 +64,7 @@ def align_on_site(structures : Array(Chem::Structure), site : Array(ResId)) : Ni
   Chem.align_ensemble(structures) { |s| Chem::AtomView.new(resids.map { |rid| s.dig(rid)["CA"] }) }
 end
 
-private def protein_shell(structure : Chem::Structure, ligand : Chem::AtomView, radius : Float64) : Set(ResId)
+private def find_protein_shell(structure : Chem::Structure, ligand : Chem::AtomView, radius : Float64) : Set(ResId)
   r2 = radius * radius
   lig_heavies = ligand.select(&.heavy?)
   lig_residues = ligand.map(&.residue).to_set
@@ -82,7 +82,7 @@ end
 
 # Single-linkage components of pockets linked by overlap coefficient; returns
 # the component present in the most structures.
-private def primary_site(pockets : Array(Pocket)) : Array(Pocket)
+private def find_primary_site(pockets : Array(Pocket)) : Array(Pocket)
   parent = Array.new(pockets.size) { |i| i }
   find = uninitialized Proc(Int32, Int32)
   find = ->(i : Int32) { parent[i] == i ? i : (parent[i] = find.call(parent[i])) }
@@ -106,7 +106,7 @@ private def overlap(a : Set(ResId), b : Set(ResId)) : Float64
   (a & b).size / smaller.to_f
 end
 
-private def canonical_resname(name : String) : String
+private def canonicalize_resname(name : String) : String
   TYPE_ALIASES[name]? || name
 end
 
@@ -114,6 +114,6 @@ end
 # structure that has them and the rest.
 private def split_equivalent(structures : Array(Chem::Structure), resids : Array(ResId)) : {Array(ResId), Array(ResId)}
   resids.partition do |rid|
-    structures.compact_map { |s| s.dig?(rid).try { |r| canonical_resname(r.name) } }.uniq.size == 1
+    structures.compact_map { |s| s.dig?(rid).try { |r| canonicalize_resname(r.name) } }.uniq.size == 1
   end
 end

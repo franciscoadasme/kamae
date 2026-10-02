@@ -19,7 +19,7 @@ record Selection,
 def select_receptors(structures : Array(Chem::Structure), opts : Options) : Selection
   # Only site residues with more than one conformation are fingerprint
   # candidates; the whole site still defines the pocket ligand.
-  candidates = variable_residues(structures, opts.residues, opts)
+  candidates = find_variable_residues(structures, opts.residues, opts)
   abort "error: no site residue has multiple conformations" if candidates.empty?
 
   # Group high-RMSF non-helical candidates that contact ligand into loop
@@ -45,7 +45,7 @@ end
 
 # Residues whose raw per-residue clustering (before any filter) yields more
 # than one state. GLY and PRO are never clustered.
-def variable_residues(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : Array(ResId)
+def find_variable_residues(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : Array(ResId)
   resids.select do |rid|
     instances = structures.compact_map { |s| resolve_residue(s, rid) }
     next false if instances.size <= 1 || NON_CLUSTERABLE.includes?(instances[0].name)
@@ -92,8 +92,8 @@ private def cluster_resolved_unit(structures : Array(Chem::Structure), resids : 
   # holos contact ligand; otherwise cap the number of states to NEFF_MAX.to_i
   # when it still exceeds that. Not every single-residue column is capped.
   if resids.size == 1 && assignment.n_eff > NEFF_MAX
-    n_contact, n_holo = sidechain_ligand_contacts(resids[0], structures, opts.residues, LIGAND_CONTACT)
-    return nil if n_contact < exposed_keep_min(n_holo)
+    n_contact, n_holo = count_sidechain_ligand_contacts(resids[0], structures, opts.residues, LIGAND_CONTACT)
+    return nil if n_contact < compute_exposed_keep_min(n_holo)
     if assignment.n_states > NEFF_MAX.to_i
       assignment = assignment.cap(dmat, NEFF_MAX.to_i)
       return nil unless assignment.n_states > 1
@@ -113,10 +113,10 @@ def build_state_matrix(structures : Array(Chem::Structure), opts : Options, unit
   StateMatrix.new(columns)
 end
 
-def conf_probabilities(matrix : StateMatrix) : Array(Array(Float64))
+def compute_conf_probabilities(matrix : StateMatrix) : Array(Array(Float64))
   matrix.map do |col|
-    n_known = col.n_known.to_f
-    col.state_counts.map { |c| c / n_known }
+    n_known = col.count_known.to_f
+    col.count_states.map { |c| c / n_known }
   end
 end
 
@@ -124,7 +124,7 @@ end
 # Side chains facing the ligand in fewer than max(FACE_MIN_COUNT,
 # FACE_MIN_FRAC of holos) structures count as never facing. If no state faces
 # the ligand, recluster on backbone (N,CA,C) when the backbone contacts it in
-# enough holos (`exposed_keep_min`), or drop.
+# enough holos (`compute_exposed_keep_min`), or drop.
 # Loop blocks are left unchanged (pose already encodes facing).
 #
 # Returns nil if the unit is dropped. On success, *dmat* is passed through
@@ -140,7 +140,7 @@ private def merge_ligand_away_states(
 ) : {UnitAssignment, HClust::DistanceMatrix}?
   resids = assignment.resids
   r2 = FACE_CUTOFF * FACE_CUTOFF
-  n_holo = structures.count { |s| !site_ligand_heavies(s, site_resids).empty? }
+  n_holo = structures.count { |s| !find_site_ligand_heavies(s, site_resids).empty? }
   min_frames = Math.max(FACE_MIN_COUNT, (FACE_MIN_FRAC * n_holo).ceil.to_i)
   faces_frame = structures.map { |s| unit_sc_faces_ligand?(s, resids, site_resids, r2) }
   faces_frame.fill(false) if faces_frame.count(true) < min_frames
@@ -152,7 +152,7 @@ private def merge_ligand_away_states(
 
   if n_face == 0
     n_bb = structures.count { |s| unit_bb_contacts_ligand?(s, resids, site_resids, r2) }
-    return nil if n_bb < exposed_keep_min(n_holo)
+    return nil if n_bb < compute_exposed_keep_min(n_holo)
     bb = cluster_backbone_assignment(structures, resids, opts)
     return nil unless bb.n_states > 1
     return nil if bb.n_eff < NEFF_MIN
@@ -166,7 +166,7 @@ private def merge_ligand_away_states(
   end
 
   # Collapse every non-facing state into the most populated away state.
-  counts = assignment.state_counts
+  counts = assignment.count_states
   away = (0...nst).select { |c| !state_faces[c] }
   target = away.max_by { |c| {counts[c], -c} }
   merged = UnitAssignment.new(assignment.resids, assignment.map { |c| c && (state_faces[c] ? c : target) }).relabel_by_population
@@ -183,7 +183,7 @@ end
 # True if any side-chain heavy atom of *resids* lies within FACE_CUTOFF of the
 # pocket ligand. Apo frames (no site ligand) do not count as facing.
 private def unit_sc_faces_ligand?(structure : Chem::Structure, resids : Array(ResId), site_resids : Array(ResId), r2 : Float64) : Bool
-  ligands = site_ligand_heavies(structure, site_resids)
+  ligands = find_site_ligand_heavies(structure, site_resids)
   return false if ligands.empty?
   resids.each do |rid|
     prot = structure.dig?(rid)
@@ -198,7 +198,7 @@ private def unit_sc_faces_ligand?(structure : Chem::Structure, resids : Array(Re
 end
 
 private def unit_bb_contacts_ligand?(structure : Chem::Structure, resids : Array(ResId), site_resids : Array(ResId), r2 : Float64) : Bool
-  ligands = site_ligand_heavies(structure, site_resids)
+  ligands = find_site_ligand_heavies(structure, site_resids)
   return false if ligands.empty?
   resids.any? do |rid|
     structure.dig?(rid).try do |prot|

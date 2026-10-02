@@ -9,7 +9,7 @@ def select_representatives(
   opts : Options,
 ) : Array(Chem::Structure)
   # 1. One site-RMSD medoid per unique complete fingerprint code.
-  pool = fingerprint_medoid_indices(structures, fingerprints, clustered_resids)
+  pool = find_fingerprint_medoids(structures, fingerprints, clustered_resids)
   pool_structs = pool.map { |i| structures[i] }
   pool_fps = pool.map { |i| fingerprints[i] }
 
@@ -25,7 +25,7 @@ def select_representatives(
   end
 
   # 3. Drop structurally redundant medoids on the N_ij=0 graph (pinned kept).
-  local = graph_redundancy_indices(pool_structs, clustered_resids, opts.cutoff, pinned)
+  local = select_nonredundant(pool_structs, clustered_resids, opts.cutoff, pinned)
   selected = local.map { |li| pool[li] }.to_set
 
   # 4. Restore a medoid for any per-column state lost in step 3 (farthest
@@ -46,7 +46,7 @@ def select_representatives(
           candidates = (0...n).select { |i| fingerprints[i][j] == state && !selected.includes?(i) }
         end
         next if candidates.empty?
-        selected << farthest_from_selected(candidates, selected, structures, clustered_resids)
+        selected << find_farthest_from_selected(candidates, selected, structures, clustered_resids)
       end
     end
   end
@@ -55,7 +55,7 @@ def select_representatives(
 end
 
 # Site-RMSD centroid within each complete fingerprint-code group.
-private def fingerprint_medoid_indices(
+private def find_fingerprint_medoids(
   structures : Array(Chem::Structure),
   fingerprints : Array(Fingerprint),
   clustered_resids : Array(ResId),
@@ -75,7 +75,7 @@ end
 # Sci Rep 2021 greedy max-degree on the N_ij=0 graph. *pinned* nodes are kept
 # first; edges to them are ignored so a frequent fingerprint cannot delete a
 # rare one.
-private def graph_redundancy_indices(
+private def select_nonredundant(
   structures : Array(Chem::Structure),
   resids : Array(ResId),
   cutoff : Float64,
@@ -123,11 +123,11 @@ private def graph_redundancy_indices(
 end
 
 private def structurally_redundant?(a : Chem::Structure, b : Chem::Structure, resids : Array(ResId), cutoff : Float64) : Bool
-  mismatch_count(a, b, resids, cutoff) == 0
+  count_mismatches(a, b, resids, cutoff) == 0
 end
 
 # Count fingerprint residues whose in-place heavy-atom RMSD exceeds *cutoff*.
-private def mismatch_count(a : Chem::Structure, b : Chem::Structure, resids : Array(ResId), cutoff : Float64) : Int32
+private def count_mismatches(a : Chem::Structure, b : Chem::Structure, resids : Array(ResId), cutoff : Float64) : Int32
   n = 0
   resids.each do |rid|
     ra = resolve_residue(a, rid)
@@ -140,7 +140,7 @@ end
 
 # Among candidates, pick the one farthest from the current selected set
 # (maximize min site RMSD to any already selected structure).
-private def farthest_from_selected(
+private def find_farthest_from_selected(
   candidates : Array(Int32),
   selected : Set(Int32),
   structures : Array(Chem::Structure),

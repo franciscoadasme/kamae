@@ -35,14 +35,14 @@ struct UnitAssignment
     (@labels.compact.max? || 0) + 1
   end
 
-  def state_counts : Array(Int32)
+  def count_states : Array(Int32)
     counts = Array.new(n_states, 0)
     @labels.each { |c| counts[c] += 1 if c }
     counts
   end
 
   # Number of structures with a known state.
-  def n_known : Int32
+  def count_known : Int32
     @labels.count { |c| !c.nil? }
   end
 
@@ -56,10 +56,10 @@ struct UnitAssignment
 
   # Shannon entropy H of the known-state distribution (bits).
   def entropy : Float64
-    n = n_known.to_f
+    n = count_known.to_f
     return 0.0 if n <= 0
     h = 0.0
-    state_counts.each do |c|
+    count_states.each do |c|
       p = c / n
       h -= p * Math.log2(p) if p > 0
     end
@@ -85,7 +85,7 @@ struct UnitAssignment
   # centroid.
   def merge_rare(dmat : HClust::DistanceMatrix, floor : Float64) : UnitAssignment
     n = @labels.size
-    counts = state_counts
+    counts = count_states
     n_known = counts.sum
     nst = counts.size
 
@@ -118,7 +118,7 @@ struct UnitAssignment
     loop do
       break if assignment.n_states <= max_states
       n = assignment.size
-      counts = assignment.state_counts
+      counts = assignment.count_states
       nst = counts.size
       rare = (0...nst).min_by { |c| {counts[c], c} }
       centroids = Hash(Int32, Int32).new

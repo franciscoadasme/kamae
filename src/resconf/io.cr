@@ -61,7 +61,7 @@ def write_fingerprints(prefix : Path, structures : Array(Chem::Structure), selec
   end
   write_csv "#{prefix}_conf.csv", header, table
 
-  probs = conf_probabilities(matrix)
+  probs = compute_conf_probabilities(matrix)
   nconf = probs[0]?.try(&.size) || 0
   header = [""] + (1..nconf).map(&.to_s)
   table = matrix.column_labels.zip(probs).map do |lab, probs_row|
