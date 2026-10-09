@@ -31,4 +31,28 @@ describe Chem::Residue do
       build_residue("XYZ", %w(C1)).complete?.should be_true
     end
   end
+
+  describe "#amino_acid?" do
+    it "is true for standard and modified amino acids" do
+      build_residue("TRP", %w(N CA C O)).amino_acid?.should be_true
+      build_residue("MSE", %w(N CA C O)).amino_acid?.should be_true
+    end
+
+    it "is false for caps, waters, and ligands" do
+      build_residue("ACE", %w(C O CH3)).amino_acid?.should be_false
+      build_residue("HOH", %w(O)).amino_acid?.should be_false
+      build_residue("LIG", %w(C1)).amino_acid?.should be_false
+    end
+  end
+
+  describe "#code" do
+    it "returns the code of the parent amino acid of modified residues" do
+      build_residue("SEP", %w(N CA C O)).code.should eq 'S'
+    end
+
+    it "returns the default if unknown" do
+      build_residue("LIG", %w(C1)).code('?').should eq '?'
+    end
+  end
+
 end
