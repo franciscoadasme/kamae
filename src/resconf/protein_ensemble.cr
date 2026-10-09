@@ -34,7 +34,8 @@ class ProteinEnsemble
   # families are those most often contacted by a structure's main ligand (most
   # protein contacts). A structure's site chains are those of its main ligand
   # among ligands contacting those families, or nil if none does. Aborts if no
-  # structure has a ligand, or if the site has two chains of the same family.
+  # structure has a ligand. Several chains of one family are copies of the
+  # same protein at the site.
   def self.new(structures : Array(Chem::Structure)) : self
     lists = structures.map { |structure| collect_protein_chains(structure) }
     families = assign_family_ids(lists.flatten)
@@ -46,9 +47,6 @@ class ProteinEnsemble
       .tally
       .max_by { |ids, count| {count, -ids.size} }
       .first
-    unless site_family_ids.uniq.size == site_family_ids.size
-      abort "error: sites formed by several copies of the same protein are not supported yet"
-    end
     groups = lists.map_with_index do |chains, i|
       site = candidates[i].select { |candidate| family_ids(candidate.chains, families) == site_family_ids }.max_by?(&.contacts)
       ChainGroup.new(chains, site.try(&.chains))

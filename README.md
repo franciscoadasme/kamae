@@ -76,9 +76,10 @@ set `LOG_LEVEL=error` to silence them.
    grouped by sequence into protein families. In each structure, the ligand
    site is the set of those chains within 5 Å of the ligand with the most
    protein contacts, among ligands contacting the most common combination
-   of families (so sites between chains are supported, but not yet
-   between copies of the same protein). Structures without such a ligand
-   use the chain that superimposes best on the frame structure (below).
+   of families, including several copies of the same protein. Copies take
+   the chain id of the reference copy they superimpose on. Structures
+   without such a ligand use the chains that superimpose best on the frame
+   structure (below).
    - Each protein is aligned with MAFFT, with chain breaks padded so
      residues flanking a missing loop stay on the right side, and
      numbered after the reference: the author numbering (with insertion

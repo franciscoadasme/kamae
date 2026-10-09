@@ -28,11 +28,11 @@ end
 
 # Backbone atoms of one residue per character of *seq* along x (3.8 Å
 # apart, `-` leaves a gap), numbered by position from *first_number*.
-private def add_chain(builder : Chem::Structure::Builder, id : Char, seq : String, *, first_number : Int32 = 1, y : Float64 = 0.0) : Nil
+private def add_chain(builder : Chem::Structure::Builder, id : Char, seq : String, *, first_number : Int32 = 1, x : Float64 = 0.0, y : Float64 = 0.0) : Nil
   builder.chain id do
     seq.each_char_with_index do |code, k|
       next if code == '-'
-      ca = vec3(3.8 * k, y, 0)
+      ca = vec3(x + 3.8 * k, y, 0)
       builder.residue residue_name(code), first_number + k do
         builder.atom "N", ca + vec3(-1.2, 0.5, 0)
         builder.atom "CA", ca
@@ -112,6 +112,22 @@ describe "#renumber_ensemble" do
     other['A'].residues[0]["CA"].pos.y.should eq 0
     other.residues.count(&.name.==("HOH")).should eq 1
     other.residues.count(&.name.==("LIG")).should eq 1
+  end
+
+  it "gives each copy the chain id of the reference copy it superimposes on" do
+    reference = build_structure("1DIM") do |builder|
+      add_chain builder, 'A', sequence, y: 0
+      add_chain builder, 'B', sequence, x: 4, y: 2
+      add_ligand builder, near: 10, y: 1
+    end
+    swapped = build_structure("2SWP") do |builder|
+      add_chain builder, 'C', sequence, x: 4, y: 2
+      add_chain builder, 'D', sequence, y: 0
+      add_ligand builder, near: 10, y: 1
+    end
+    renumber_ensemble([reference, swapped], reference)
+    swapped['A'].residues[0]["CA"].pos.y.should eq 0
+    swapped['B'].residues[0]["CA"].pos.y.should eq 2
   end
 
   it "drops structures without the site proteins" do

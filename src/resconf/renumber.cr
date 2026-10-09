@@ -25,12 +25,13 @@ def renumber_ensemble(structures : Array(Chem::Structure), reference : Chem::Str
   ensemble = ProteinEnsemble.new(members)
   ref_index = members.index!(&.same?(reference))
   frame_chains = [] of Chem::Chain
-  references = ensemble.site_family_ids.to_h do |family_id|
-    chain = ensemble.find_family_chain(ensemble[ref_index], family_id) ||
-            abort "error: reference #{reference.title} lacks a protein of the site"
-    frame_chains << chain
-    padded = pad_chain_breaks(amino_acids(chain))
-    {family_id, NumberingReference.new(padded_sequence(padded), padded.map(&.try(&.id)))}
+  references = {} of Int32 => NumberingReference
+  ensemble.site_family_ids.uniq.each do |family_id|
+    chains = ensemble.select_family_chains(ensemble[ref_index], family_id)
+    abort "error: reference #{reference.title} lacks a protein of the site" if chains.empty?
+    frame_chains.concat chains
+    padded = pad_chain_breaks(amino_acids(chains[0]))
+    references[family_id] = NumberingReference.new(padded_sequence(padded), padded.map(&.try(&.id)))
   end
   renumber_site_chains(structures, ensemble, references, frame_chains)
 end
@@ -43,7 +44,7 @@ def renumber_ensemble(structures : Array(Chem::Structure), sequence : String) : 
   frame_chains = ensemble.compact_map(&.site_chains).first? ||
                  abort "error: no structure has a ligand at the site"
   sequence = sequence.upcase
-  references = ensemble.site_family_ids.to_h do |family_id|
+  references = ensemble.site_family_ids.uniq.to_h do |family_id|
     chain = ensemble.find_chain!(frame_chains, family_id)
     ids = Array(ResId?).new(sequence.size) { |i| ResId.new(chain.id, i + 1) }
     {family_id, NumberingReference.new(sequence, ids)}
@@ -229,12 +230,13 @@ private def padded_sequence(residues : Array(Chem::Residue?)) : String
   residues.join { |residue| residue.try(&.code(UNKNOWN_CODE)) || 'X' }
 end
 
-# Ligand-site chains of a structure, one per site family, with their new
-# ids, or the reason the structure is dropped. A structure with site chains
-# keeps those chains if they are at least MIN_IDENTITY identical to the
-# reference. One without takes, per family, the chain (see
-# `ProteinEnsemble#select_family_chains`) whose Cα atoms superimpose best onto those
-# of *frame_chains*, paired by new id.
+# Ligand-site chains of a structure, one per site family copy, with their
+# new ids, or the reason the structure is dropped. A structure with site
+# chains keeps those chains if they are at least MIN_IDENTITY identical to
+# the reference. Copies of one family take the chain id of the reference
+# copy they superimpose on. A structure without site chains takes, per
+# family, that many chains (see `ProteinEnsemble#select_family_chains`)
+# whose Cα atoms, taken together, superimpose best onto *frame_chains*.
 private def plan_renumbering(
   ensemble : ProteinEnsemble,
   index : Int32,
@@ -242,30 +244,81 @@ private def plan_renumbering(
   frame_chains : Array(Chem::Chain),
 ) : Array(ChainRenumbering) | String
   group = ensemble[index]
-  ensemble.site_family_ids.map do |family_id|
-    if site_chains = group.site_chains
-      chain = ensemble.find_chain!(site_chains, family_id)
-      numbering = numberings[chain.object_id]? ||
-                  return "chain #{chain.id} has too many residues missing from the reference"
+  planned = [] of ChainRenumbering
+  ensemble.site_family_ids.uniq.each do |family_id|
+    refs = ensemble.select_chains(frame_chains, family_id)
+    pool = group.site_chains || group.protein_chains
+    targets = ensemble.select_chains(pool, family_id)
+    assigned = assign_copies(targets, refs, numberings, group.site_chains.nil?)
+    return assigned if assigned.is_a?(String)
+    planned.concat assigned
+  end
+  planned
+end
+
+# Pairs *targets* with *refs*. A ligand site must have one target per
+# reference copy. A structure without one contributes the subset of its
+# protein chains whose Cα atoms, in one superposition, match the
+# reference copies best.
+private def assign_copies(
+  targets : Array(Chem::Chain),
+  refs : Array(Chem::Chain),
+  numberings : Hash(UInt64, ChainNumbering),
+  choose_subset : Bool,
+) : Array(ChainRenumbering) | String
+  unless choose_subset
+    return "no site ligand nor chain matching the reference" if targets.size != refs.size
+    targets.each do |chain|
+      numbering = numberings[chain.object_id]?
+      return "chain #{chain.id} has too many residues missing from the reference" unless numbering && numbering.ids
       if numbering.identity < MIN_IDENTITY
         return "chain #{chain.id} is #{(numbering.identity * 100).round.to_i}% identical to the reference"
       end
-      ids = numbering.ids || return "chain #{chain.id} has too many residues missing from the reference"
-      ChainRenumbering.new(chain, ids)
-    else
-      frame_chain = ensemble.find_chain!(frame_chains, family_id)
-      frame_ids = numberings[frame_chain.object_id]?.try(&.ids) || amino_acids(frame_chain).map(&.id)
-      frame_ca = map_ca_by_id(frame_chain, frame_ids.not_nil!)
-      best = ensemble.select_family_chains(group, family_id).compact_map do |chain|
-        numbering = numberings[chain.object_id]?
-        next unless numbering && numbering.identity >= MIN_IDENTITY
-        next unless ids = numbering.ids
-        rmsd = superpose_ca(map_ca_by_id(chain, ids), frame_ca)
-        {ChainRenumbering.new(chain, ids), rmsd} if rmsd
-      end.min_by?(&.[1])
-      best.try(&.[0]) || return "no site ligand nor chain matching the reference"
     end
   end
+  usable = [] of {Chem::Chain, Array(ResId)}
+  targets.each do |chain|
+    numbering = numberings[chain.object_id]?
+    next unless numbering && numbering.identity >= MIN_IDENTITY
+    next unless ids = numbering.ids
+    usable << {chain, ids}
+  end
+  return "no site ligand nor chain matching the reference" if usable.size < refs.size
+  best = nil.as(Array(ChainRenumbering)?)
+  best_cost = Float64::MAX
+  usable.each_combination(refs.size) do |subset|
+    refs.each_permutation do |order|
+      paired = [] of ChainRenumbering
+      query = [] of Chem::Spatial::Vec3
+      reference = [] of Chem::Spatial::Vec3
+      subset.each_with_index do |item, i|
+        chain, ids = item
+        ref = order[i]
+        ids = retarget_ids(ids, ref.id)
+        paired << ChainRenumbering.new(chain, ids)
+        ca = map_ca_by_id(chain, ids)
+        ref_ca = map_ca_by_id(ref, amino_acids(ref).map(&.id))
+        ca.each do |id, pos|
+          next unless ref_pos = ref_ca[id]?
+          query << pos
+          reference << ref_pos
+        end
+      end
+      next if query.size < 3
+      cost = Chem::Spatial.rmsd(query, reference, minimize: true)
+      if cost < best_cost
+        best = paired
+        best_cost = cost
+      end
+    end
+  end
+  # A single site chain is kept from the alignment even when too few Cα
+  # atoms are shared to score a superposition.
+  if best.nil? && !choose_subset && refs.size == 1
+    chain, ids = usable[0]
+    return [ChainRenumbering.new(chain, retarget_ids(ids, refs[0].id))]
+  end
+  best || "no site ligand nor chain matching the reference"
 end
 
 # Gives the amino acids of *chain* their new *ids*, and other residues of
@@ -288,6 +341,10 @@ private def renumber_chain(chain : Chem::Chain, ids : Array(ResId)) : Nil
     id
   end
   (residues + others).zip(ids + other_ids) { |residue, id| residue.renumber(id.number, id.insertion_code) }
+end
+
+private def retarget_ids(ids : Array(ResId), chain_id : Char) : Array(ResId)
+  ids.map { |id| ResId.new(chain_id, id.number, id.insertion_code) }
 end
 
 # Numbers the ligand-site chains of every structure against *references*
@@ -331,12 +388,4 @@ end
 private def spread_over_columns(row : String, items : Array(T)) : Array(T?) forall T
   k = -1
   row.chars.map { |char| char == '-' ? nil : items[k += 1] }
-end
-
-# Cα RMSD after superposition over shared residue ids, or nil if fewer
-# than three are shared.
-private def superpose_ca(ca_by_id : Hash(ResId, Chem::Spatial::Vec3), ref_ca_by_id : Hash(ResId, Chem::Spatial::Vec3)) : Float64?
-  shared = ca_by_id.keys.select { |id| ref_ca_by_id.has_key?(id) }
-  return if shared.size < 3
-  Chem::Spatial.rmsd(shared.map { |id| ca_by_id[id] }, shared.map { |id| ref_ca_by_id[id] }, minimize: true)
 end
