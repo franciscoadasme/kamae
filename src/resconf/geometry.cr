@@ -56,12 +56,10 @@ end
 
 # In-place heavy-atom RMSD with residue-template symmetry and flippable
 # Asn/Gln/His atoms (see `pair_heavy_atoms_resolving_flips`). Structures
-# must already be site-aligned; large values usually mean a bad alignment.
+# must already be site-aligned.
 def residue_rmsd(a : Chem::Residue, b : Chem::Residue) : Float64
   atoms_a, atoms_b = pair_heavy_atoms_resolving_flips(a, b)
-  rmsd = Chem::AtomView.new(atoms_a).rmsd Chem::AtomView.new(atoms_b), use_symmetry: true
-  abort "error: RMSD too large for #{a}; check protein alignment" if rmsd > 20
-  rmsd
+  Chem::AtomView.new(atoms_a).rmsd Chem::AtomView.new(atoms_b), use_symmetry: true
 end
 
 def backbone_site_rmsd(a : Chem::Structure, b : Chem::Structure, resids : Array(ResId)) : Float64

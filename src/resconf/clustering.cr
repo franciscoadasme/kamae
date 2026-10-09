@@ -6,6 +6,7 @@ FACE_MIN_COUNT  =    3
 NEFF_MAX        =  4.0
 NEFF_MIN        =  1.3
 NMI_CUTOFF      =  0.7
+LARGE_RMSD      = 20.0
 NON_CLUSTERABLE = Set{"GLY", "PRO"}
 
 record Selection,
@@ -44,14 +45,26 @@ def select_receptors(structures : Array(Chem::Structure), opts : Options) : Sele
 end
 
 # Residues whose raw per-residue clustering (before any filter) yields more
-# than one state. GLY and PRO are never clustered.
+# than one state. GLY and PRO are never clustered. Residues deviating more
+# than LARGE_RMSD between two structures are reported, as that may also
+# come from a bad alignment or inconsistent numbering.
 def find_variable_residues(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : Array(ResId)
-  resids.select do |rid|
+  largest = {} of ResId => Float64
+  variable = resids.select do |rid|
     instances = structures.compact_map { |s| resolve_residue(s, rid) }
     next false if instances.size <= 1 || NON_CLUSTERABLE.includes?(instances[0].name)
     dmat = HClust::DistanceMatrix.new(instances) { |a, b| residue_rmsd(a, b) }
+    rmsd = dmat.max
+    largest[rid] = rmsd if rmsd > LARGE_RMSD
     HClust.linkage(dmat, opts.rule).labels(opts.cutoff).uniq.size > 1
   end
+  unless largest.empty?
+    Resconf::Log.warn do
+      residues = largest.join(", ") { |rid, rmsd| "#{rid} (#{rmsd.round(1)} Å)" }
+      "Site residues deviating more than #{LARGE_RMSD} Å between structures: #{residues}; check the alignment and numbering"
+    end
+  end
+  variable
 end
 
 # Cluster one fingerprint unit across the structures where all its residues
