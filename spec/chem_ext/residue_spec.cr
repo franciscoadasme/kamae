@@ -55,4 +55,20 @@ describe Chem::Residue do
     end
   end
 
+  describe "#renumber" do
+    it "keeps the chain lookup when residues swap ids" do
+      structure = Chem::Structure.build do |b|
+        b.chain 'A' do
+          b.residue "ALA", 1 { b.atom "CA", Chem::Spatial::Vec3.zero }
+          b.residue "GLY", 2 { b.atom "CA", Chem::Spatial::Vec3.zero }
+        end
+      end
+      ala, gly = structure.residues.to_a
+      ala.renumber 2, 'A'
+      gly.renumber 1
+      ala.renumber 2
+      structure['A'][1].should be gly
+      structure['A'][2].should be ala
+    end
+  end
 end

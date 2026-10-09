@@ -31,5 +31,15 @@ module Chem
       return true unless res_t = template
       res_t.atoms.all? { |atom_t| !atom_t.element.heavy? || self[atom_t.name]? }
     end
+
+    # Sets the number and insertion code at once. Setting them one at a
+    # time may briefly give the residue the id of another one, and drop
+    # that one from the chain's residue lookup.
+    def renumber(number : Int32, insertion_code : Char? = nil) : Nil
+      return if number == @number && insertion_code == @insertion_code
+      old_number, old_insertion_code = @number, @insertion_code
+      @number, @insertion_code = number, insertion_code
+      @chain.update_residue_index self, old_number, old_insertion_code
+    end
   end
 end
