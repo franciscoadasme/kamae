@@ -51,6 +51,7 @@ require "csv"
 require "hclust"
 
 require "./resconf/chem_ext"
+require "./resconf/hclust_ext"
 require "./resconf/resid"
 
 VERSION = "0.1.0"
