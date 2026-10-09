@@ -3,14 +3,17 @@
 # Per structure: each ligand molecule → protein residues within SITE_RADIUS
 # (a pocket). Pockets sharing most residues (overlap coefficient) are linked
 # across the ensemble; the component seen in the most structures is the site.
-# The site is the union of its pockets, kept only where the residue has the
-# same type in every structure that has it. Incomplete residues are ignored.
+# The site is the union of its pockets, restricted to residues in the pockets
+# of enough structures (so one large ligand does not extend it) and of the
+# same type in every structure that has them. Incomplete residues are ignored.
 
 require "./ligand"
 
-SITE_RADIUS       = 5.0
-POCKET_OVERLAP    = 0.5
-MIN_RESOLVED_FRAC = 0.5
+MIN_RESOLVED_FRAC =  0.5
+POCKET_OVERLAP    =  0.5
+SITE_MIN_COUNT    =    3
+SITE_MIN_FRAC     = 0.01
+SITE_RADIUS       =  5.0
 
 # Protonation/state variants (Maestro, Amber) of standard amino acids.
 TYPE_ALIASES = {
@@ -37,10 +40,8 @@ def detect_binding_site(structures : Array(Chem::Structure)) : Array(ResId)
   end
   abort "error: no ligands found (need holo structures)" if pockets.empty?
 
-  candidates = Set(ResId).new
-  find_primary_site(pockets).each { |pocket| candidates.concat pocket.shell }
-
-  site, dropped = split_equivalent(structures, candidates.to_a)
+  candidates = collect_supported_residues(find_primary_site(pockets))
+  site, dropped = split_equivalent(structures, candidates)
   abort "error: no site residues of the same type in all structures" if site.empty?
   unless dropped.empty?
     Resconf::Log.warn { "Dropped site residues of a different type in some structures: #{dropped.join(',')}" }
@@ -98,6 +99,17 @@ private def find_primary_site(pockets : Array(Pocket)) : Array(Pocket)
     {idxs.map { |i| pockets[i].index }.uniq.size, idxs.size}
   end
   best.map { |i| pockets[i] }
+end
+
+# Residues in the pockets of at least max(SITE_MIN_COUNT, SITE_MIN_FRAC of
+# the structures with a pocket in *component*) structures, or all of them
+# if fewer.
+private def collect_supported_residues(component : Array(Pocket)) : Array(ResId)
+  structures_by_residue = Hash(ResId, Set(Int32)).new { |hash, rid| hash[rid] = Set(Int32).new }
+  component.each { |pocket| pocket.shell.each { |rid| structures_by_residue[rid] << pocket.index } }
+  n_structures = component.map(&.index).uniq.size
+  min_count = Math.min(n_structures, Math.max(SITE_MIN_COUNT, (SITE_MIN_FRAC * n_structures).ceil.to_i))
+  structures_by_residue.select { |_, indexes| indexes.size >= min_count }.keys
 end
 
 private def overlap(a : Set(ResId), b : Set(ResId)) : Float64
