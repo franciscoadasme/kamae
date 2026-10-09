@@ -17,7 +17,7 @@ record Selection,
 
 # Fingerprint the site residues (`opts.residues`) of an already superimposed
 # ensemble and select representatives. Writes nothing.
-def select_receptors(structures : Array(Chem::Structure), opts : Options) : Selection
+def select_receptors(structures : Array(Chem::Structure), opts : Options, frame : Chem::Structure? = nil) : Selection
   # Only site residues with more than one conformation are fingerprint
   # candidates; the whole site still defines the pocket ligand.
   candidates = find_variable_residues(structures, opts.residues, opts)
@@ -25,7 +25,7 @@ def select_receptors(structures : Array(Chem::Structure), opts : Options) : Sele
 
   # Group high-RMSF non-helical candidates that contact ligand into loop
   # blocks; drop mobile residues that never contact.
-  analysis = analyze_backbone_mobility(structures, opts, candidates)
+  analysis = analyze_backbone_mobility(structures, opts, candidates, frame)
   units = build_fingerprint_units(candidates, analysis)
   abort "error: RMSF filter removed every fingerprint residue" if units.empty?
 

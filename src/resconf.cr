@@ -3,6 +3,9 @@
 # Selects a small set of representative holo structures from a crystal (or MD)
 # ensemble. Algorithm:
 #
+# 0. With `--renumber`, give the site chains consistent ids and residue
+#    numbering after a reference (sequence alignment with MAFFT), dropping
+#    other chains.
 # 1. Resolve the binding site (`-r` or auto-detect from ligands) and, unless
 #    `--prealigned`, superimpose the ensemble on the site CA atoms (fit to the
 #    ensemble mean, iteratively down-weighting mobile atoms).
@@ -43,7 +46,7 @@
 # Library entry point; the command-line tool is src/cli.cr.
 #
 # Layout (src/resconf/):
-#   chem_ext, resid, geometry, ligand, site,
+#   chem_ext, hclust_ext, resid, geometry, ligand, protein_ensemble, site, renumber,
 #   fingerprint, mobility, clustering, representatives, io
 
 require "chem"
@@ -65,6 +68,12 @@ class Options
   property cutoff : Float64 = 2.0
   property rule : HClust::Rule = :complete
   property prealigned : Bool = false
+  property renumber : Bool = false
+  # Structure or FASTA sequence for `renumber_ensemble` (set while parsing).
+  property renumber_ref : Chem::Structure | String | Nil = nil
+  property renumber_label : String? = nil
+  # Frame for alignment and DSSP (set while parsing when a path is given).
+  property reference : Chem::Structure? = nil
 end
 
 require "./resconf/clustering"
@@ -73,5 +82,20 @@ require "./resconf/geometry"
 require "./resconf/io"
 require "./resconf/ligand"
 require "./resconf/mobility"
+require "./resconf/protein_ensemble"
+require "./resconf/renumber"
 require "./resconf/representatives"
 require "./resconf/site"
+
+# The structure whose ligand site has the most residues, then the fewest
+# incomplete ones, the best resolution, and the first title. Used as the
+# coordinate and secondary-structure frame when none is given.
+def select_frame(structures : Array(Chem::Structure)) : Chem::Structure
+  ensemble = ProteinEnsemble.new(structures)
+  index = (0...ensemble.size).select { |i| ensemble[i].site_chains }.min_by do |i|
+    residues = (ensemble[i].site_chains || [] of Chem::Chain).flat_map { |chain| amino_acids(chain) }
+    resolution = structures[i].experiment.try(&.resolution) || Float64::MAX
+    {-residues.size, residues.count { |residue| !residue.complete? }, resolution, structures[i].title}
+  end
+  structures[index]
+end

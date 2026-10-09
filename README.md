@@ -14,7 +14,9 @@ shards install
 shards build --release
 ```
 
-The executable is `bin/resconf`.
+The executable is `bin/resconf`. `--renumber` also needs
+[MAFFT](https://mafft.cbrc.jp/alignment/software/) on the `PATH` (e.g.,
+`apt install mafft`).
 
 ## Usage
 
@@ -30,6 +32,8 @@ multi-structure file, or a directory of them.
 |---|---|
 | `-r`, `--residues LIST` | Binding-site residues (`A:64,A:135`, insertion codes as `A:14A`) or a `.txt` file with that list. Auto-detected when omitted. |
 | `--prealigned` | Skip the site alignment (structures already superimposed). |
+| `--renumber[=REF]` | Give the site chains consistent chain ids and residue numbering after `REF`, a FASTA or structure file (chosen from the ensemble when omitted). Needs MAFFT. |
+| `--reference PATH` | Structure used as the frame for alignment and secondary structure. A structure given to `--renumber` sets this as well. |
 | `-d`, `--cutoff NUMBER` | Clustering height in Å (default 2). |
 | `--linkage RULE` | `complete` (default), `average`, `single` or `weighted`. |
 | `-o`, `--output PREFIX` | Output path prefix. |
@@ -40,12 +44,19 @@ Examples:
 # detect the site, align, and select representatives
 resconf -o out/target structures/*.pdb
 
+# raw PDBs with inconsistent chains or numbering, numbered after UniProt
+resconf --renumber=P00918.fasta -o out/target pdbs/
+
+# number after UniProt, align after a prepared structure
+resconf --renumber=P00918.fasta --reference=prepared.pdb -o out/target pdbs/
+
 # explicit site on an ensemble that is already superimposed
 resconf -r site.txt --prealigned -o out/target ensemble.maegz
 ```
 
-Warnings (e.g., ignored incomplete residues, or structures left unassigned
-as outliers) are written to standard error;
+Warnings (e.g., ignored incomplete residues, structures left unassigned
+as outliers, or site residues moving more than 20 Å between structures)
+are written to standard error;
 set `LOG_LEVEL=error` to silence them.
 
 ### Outputs
@@ -56,9 +67,35 @@ set `LOG_LEVEL=error` to silence them.
 - `{prefix}_reslist.csv` — fingerprint columns
 - `{prefix}_repr.txt` — IDs of the representative structures
 - `{prefix}_repr.maegz` — the representative structures
+- `{prefix}_renumbered.maegz` — the renumbered, aligned ensemble
+  (`--renumber`)
 
 ## Protocol
 
+0. **Renumbering** (`--renumber`). Protein chains (≥ 20 residues) are
+   grouped by sequence into protein families. In each structure, the ligand
+   site is the set of those chains within 5 Å of the ligand with the most
+   protein contacts, among ligands contacting the most common combination
+   of families (so sites between chains are supported, but not yet
+   between copies of the same protein). Structures without such a ligand
+   use the chain that superimposes best on the frame structure (below).
+   - Each protein is aligned with MAFFT, with chain breaks padded so
+     residues flanking a missing loop stay on the right side, and
+     numbered after the reference: the author numbering (with insertion
+     codes) of a reference structure, or the positions of a FASTA
+     sequence. Residues absent from the reference take the free numbers
+     in between, or insertion codes.
+   - The frame used for alignment and secondary structure is set with
+     `--reference`, or by a structure given to `--renumber` (which
+     overrides `--reference`). It is not added to the ensemble when it is
+     not already among the inputs. A FASTA given to `--renumber` only
+     affects numbering; the frame is then `--reference` or, if omitted,
+     the structure whose ligand site has the most residues (then fewest
+     incomplete ones, best resolution, and ID).
+   - Ligand-site chains take the reference chain ids. Other protein chains are
+     removed; ligands, peptides, waters and ions are kept within 5 Å of
+     the ligand site. Structures whose chain is less than 80 % identical to the
+     reference are dropped and reported.
 1. **Binding site.** Unless given with `-r`, the site is detected from the
    co-crystallized ligands:
    - Ligands are molecules (residues joined by covalent bonds) with 5–100
@@ -70,7 +107,9 @@ set `LOG_LEVEL=error` to silence them.
    - Each ligand defines a pocket: the protein residues within 5 Å (heavy
      atoms). Pockets sharing at least half of the smaller one are linked
      across the ensemble, and the group seen in the most structures is the
-     binding site (union of its pockets).
+     binding site: the union of its pockets, restricted to residues in
+     the pockets of at least max(3, 1 %) of its structures (so a single
+     large ligand does not extend the site).
    - Residues of a different type in any structure are dropped.
    - A residue missing a heavy atom of its template, or absent, is ignored
      in that structure by every later step: it gets no state, and the

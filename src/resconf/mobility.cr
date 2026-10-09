@@ -30,15 +30,15 @@ end
 # Mark non-helical fingerprint residues (*candidates*) whose backbone RMSF
 # exceeds max(median helical bb RMSF, RMSF_BB_FLOOR). Threshold is
 # ensemble-adaptive.
-def analyze_backbone_mobility(structures : Array(Chem::Structure), opts : Options, candidates : Array(ResId)) : MobilityAnalysis
-  ref = structures[0]
+def analyze_backbone_mobility(structures : Array(Chem::Structure), opts : Options, candidates : Array(ResId), frame : Chem::Structure? = nil) : MobilityAnalysis
+  ref = frame || structures[0]
   Chem::Protein::DSSP.assign(ref)
 
   mobilities = [] of ResidueMobility
   helical_bb = [] of Float64
   ref.residues.each do |residue|
     next unless protein_like?(residue)
-    mobility = measure_residue_mobility(structures, residue.id)
+    mobility = measure_residue_mobility(structures, residue.id, ref)
     next unless mobility
     helical_bb << mobility.bb_rmsf if residue.sec.type.helical?
     mobilities << mobility
@@ -104,7 +104,7 @@ private def protein_like?(residue : Chem::Residue) : Bool
   residue.protein? || residue.has_backbone?
 end
 
-private def measure_residue_mobility(structures : Array(Chem::Structure), resid : ResId) : ResidueMobility?
+private def measure_residue_mobility(structures : Array(Chem::Structure), resid : ResId, ref : Chem::Structure) : ResidueMobility?
   instances = structures.compact_map { |s| resolve_residue(s, resid) }
   return nil if instances.size <= 1
   return nil unless instances[0].has_backbone?
@@ -115,7 +115,7 @@ private def measure_residue_mobility(structures : Array(Chem::Structure), resid 
   ResidueMobility.new(
     resid: resid,
     name: ref_residue.name,
-    sec: structures[0].dig(resid).sec.type.code.to_s,
+    sec: ref.dig(resid).sec.type.code.to_s,
     bb_rmsf: bb_rmsf,
     sc_rmsf: sc_rmsf,
     mobile: false,

@@ -4,11 +4,11 @@ def load_structures(paths : Array(Path)) : Array(Chem::Structure)
     if Dir.exists?(path)
       %w(*.pdb *.mae *.maegz *.mae.gz).each do |pattern|
         Dir.glob(path.join(pattern).to_s).sort.each do |file|
-          structures.concat Array(Chem::Structure).read(file)
+          append_structures structures, file
         end
       end
     else
-      structures.concat Array(Chem::Structure).read(path)
+      append_structures structures, path
     end
   end
   abort "error: no structures loaded" if structures.empty?
@@ -19,6 +19,25 @@ def load_structures(paths : Array(Path)) : Array(Chem::Structure)
     struc.title = token.split.first.split('_').first.upcase
   end
   structures.sort_by! &.title
+end
+
+# Unique id of a structure entry: expanded path plus a zero-padded index.
+# Two structures are the same file entry when their keys are equal.
+def set_source_key(structure : Chem::Structure, path : Path | String, index : Int32) : String
+  key = "#{Path[path].expand}:#{index.to_s.rjust(8, '0')}"
+  structure.metadata["source_key"] = key
+  key
+end
+
+def source_key(structure : Chem::Structure) : String?
+  structure.metadata["source_key"]?.try(&.as_s?)
+end
+
+private def append_structures(structures : Array(Chem::Structure), path : Path | String) : Nil
+  Array(Chem::Structure).read(path).each_with_index do |structure, index|
+    set_source_key(structure, path, index)
+    structures << structure
+  end
 end
 
 def write_csv(path : String | Path, header : Array(String), rows : Array(Array(T))) : Nil forall T
