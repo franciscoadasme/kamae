@@ -1,7 +1,5 @@
 # Per-unit clustering → StateMatrix.
 
-FACE_MIN_FRAC   = 0.01
-FACE_MIN_COUNT  =    3
 NEFF_MAX        =  4.0
 NEFF_MIN        =  1.3
 NMI_CUTOFF      =  0.7
@@ -146,8 +144,8 @@ def compute_conf_probabilities(matrix : StateMatrix) : Array(Array(Float64))
 end
 
 # Merge non-facing side-chain states into one "away" bin (single-residue units).
-# Side chains facing the ligand in fewer than max(FACE_MIN_COUNT,
-# FACE_MIN_FRAC of holos) structures count as never facing. If no state faces
+# Side chains facing the ligand in fewer than `quorum` holo structures count as
+# never facing. If no state faces
 # the ligand, recluster on backbone (N,CA,C) when the backbone contacts it in
 # enough holos (`compute_exposed_keep_min`), or drop.
 # Loop blocks are left unchanged (pose already encodes facing).
@@ -166,7 +164,7 @@ private def merge_ligand_away_states(
   resids = assignment.resids
   r2 = SITE_RADIUS * SITE_RADIUS
   n_holo = structures.count { |s| !find_site_ligand_heavies(s, site_resids).empty? }
-  min_frames = Math.max(FACE_MIN_COUNT, (FACE_MIN_FRAC * n_holo).ceil.to_i)
+  min_frames = quorum(n_holo)
   faces_frame = structures.map { |s| unit_sc_faces_ligand?(s, resids, site_resids, r2) }
   faces_frame.fill(false) if faces_frame.count(true) < min_frames
   nst = assignment.n_states

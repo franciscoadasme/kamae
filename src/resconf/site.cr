@@ -10,10 +10,11 @@
 
 require "./ligand"
 
-MIN_RESOLVED_FRAC =  0.5
-POCKET_OVERLAP    =  0.5
-SITE_MIN_COUNT    =    3
-SITE_MIN_FRAC     = 0.01
+MIN_RESOLVED_FRAC = 0.5
+POCKET_OVERLAP    = 0.5
+# A residue, a facing vote, or a backbone contact counts at max(count, fraction).
+QUORUM_COUNT      =    3
+QUORUM_FRAC       = 0.01
 SITE_RADIUS       =  5.0
 
 # Protonation/state variants (Maestro, Amber) of standard amino acids.
@@ -77,15 +78,19 @@ private def canonicalize_resname(name : String) : String
   TYPE_ALIASES[name]? || name
 end
 
-# Residues in the pockets of at least max(SITE_MIN_COUNT, SITE_MIN_FRAC of
-# the structures with a pocket in *component*) structures, or all of them
-# if fewer.
+# Residues in the pockets of at least `quorum` of the structures with a pocket
+# in *component*, or all of them if fewer.
 private def collect_supported_residues(component : Array(Pocket)) : Array(ResId)
   structures_by_residue = Hash(ResId, Set(Int32)).new { |hash, rid| hash[rid] = Set(Int32).new }
   component.each { |pocket| pocket.shell.each { |rid| structures_by_residue[rid] << pocket.index } }
   n_structures = component.map(&.index).uniq.size
-  min_count = Math.min(n_structures, Math.max(SITE_MIN_COUNT, (SITE_MIN_FRAC * n_structures).ceil.to_i))
+  min_count = Math.min(n_structures, quorum(n_structures))
   structures_by_residue.select { |_, indexes| indexes.size >= min_count }.keys
+end
+
+# max(QUORUM_COUNT, QUORUM_FRAC of *n*).
+def quorum(n : Int32) : Int32
+  Math.max(QUORUM_COUNT, (QUORUM_FRAC * n).ceil.to_i)
 end
 
 # Single-linkage components of pockets linked by overlap coefficient; returns
