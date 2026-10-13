@@ -145,9 +145,8 @@ end
 
 # Merge non-facing side-chain states into one "away" bin (single-residue units).
 # Side chains facing the ligand in fewer than `quorum` holo structures count as
-# never facing. If no state faces
-# the ligand, recluster on backbone (N,CA,C) when the backbone contacts it in
-# enough holos (`compute_exposed_keep_min`), or drop.
+# never facing. If no state faces the ligand, recluster on backbone (N, Cα, C)
+# when the backbone comes within SITE_RADIUS in that same number of holos, or drop.
 # Loop blocks are left unchanged (pose already encodes facing).
 #
 # Returns nil if the unit is dropped. On success, *dmat* is passed through
@@ -175,7 +174,7 @@ private def merge_ligand_away_states(
 
   if n_face == 0
     n_bb = structures.count { |s| unit_bb_contacts_ligand?(s, resids, site_resids, r2) }
-    return nil if n_bb < compute_exposed_keep_min(n_holo)
+    return nil if n_bb < min_frames
     bb = cluster_backbone_assignment(structures, resids, opts)
     return nil unless bb.n_states > 1
     return nil if bb.n_eff < NEFF_MIN
