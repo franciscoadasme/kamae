@@ -118,27 +118,6 @@ struct UnitAssignment
     UnitAssignment.new(@resids, merged).relabel_by_population
   end
 
-  # Merge the rarest state into its nearest neighbor until ≤ *max_states*.
-  def cap(dmat : HClust::DistanceMatrix, max_states : Int32) : UnitAssignment
-    assignment = self
-    loop do
-      break if assignment.n_states <= max_states
-      n = assignment.size
-      counts = assignment.count_states
-      nst = counts.size
-      rare = (0...nst).min_by { |c| {counts[c], c} }
-      centroids = Hash(Int32, Int32).new
-      nst.times do |c|
-        members = (0...n).select { |i| assignment[i] == c }
-        centroids[c] = members[dmat[members].centroid]
-      end
-      target = (0...nst).reject { |c| c == rare }.min_by { |c| dmat[centroids[rare], centroids[c]] }
-      merged = assignment.map { |c| c == rare ? target : c }
-      assignment = UnitAssignment.new(assignment.resids, merged).relabel_by_population
-    end
-    assignment
-  end
-
   # Joint Shannon entropy H(self, other) for two columns (equal ensemble
   # length) over the structures known in both.
   def joint_entropy(other : UnitAssignment) : Float64

@@ -1,6 +1,3 @@
-CONTACT_HOLO_FRAC = 0.10
-CONTACT_HOLO_MIN  =    5
-
 LIGAND_CACHE = {} of UInt64 => Array(Chem::AtomView)
 
 # Ligand molecules of *structure*, computed once per structure object.
@@ -47,32 +44,6 @@ def contacts_ligand?(resid : ResId, structures : Array(Chem::Structure), site_re
       ligands.any? { |la| pa.pos.distance2(la.pos) <= r2 }
     end
   end
-end
-
-# Side-chain heavy atoms vs pocket-ligand heavy atoms → {n_contacting_holo, n_holo}.
-def count_sidechain_ligand_contacts(resid : ResId, structures : Array(Chem::Structure), site_resids : Array(ResId), radius : Float64) : {Int32, Int32}
-  r2 = radius * radius
-  n_holo = 0
-  n_contact = 0
-  structures.each do |structure|
-    ligands = find_site_ligand_heavies(structure, site_resids)
-    next if ligands.empty?
-    n_holo += 1
-    prot = resolve_residue(structure, resid)
-    next unless prot
-    sidechain = sidechain_heavies(prot)
-    next if sidechain.empty?
-    hit = sidechain.any? do |pa|
-      ligands.any? { |la| pa.pos.distance2(la.pos) <= r2 }
-    end
-    n_contact += 1 if hit
-  end
-  {n_contact, n_holo}
-end
-
-def compute_exposed_keep_min(n_holo : Int32) : Int32
-  frac = (CONTACT_HOLO_FRAC * n_holo).ceil.to_i
-  Math.max(CONTACT_HOLO_MIN, frac)
 end
 
 private def collect_site_heavy_atoms(structure : Chem::Structure, site_resids : Array(ResId)) : Array(Chem::Atom)

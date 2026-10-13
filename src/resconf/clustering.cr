@@ -1,7 +1,5 @@
 # Per-unit clustering → StateMatrix.
 
-NEFF_MAX        =  4.0
-NEFF_MIN        =  1.3
 NMI_CUTOFF      =  0.7
 LARGE_RMSD      = 20.0
 NON_CLUSTERABLE = Set{"GLY", "PRO"}
@@ -26,9 +24,8 @@ def select_receptors(structures : Array(Chem::Structure), opts : Options, frame 
   units = build_fingerprint_units(candidates, analysis)
   abort "error: RMSF filter removed every fingerprint residue" if units.empty?
 
-  # Per unit: cluster conformations, merge rare states, drop frozen columns,
-  # merge away-facing side chains (or backbone-only if none face), and drop or
-  # cap high-n_eff exposed single residues.
+  # Per unit: cluster conformations, merge rare states, and merge
+  # away-facing side chains (or recluster on the backbone if none face).
   matrix = build_state_matrix(structures, opts, units)
 
   # If two columns share nearly the same partition (high NMI), keep one.
@@ -92,27 +89,8 @@ private def cluster_resolved_unit(structures : Array(Chem::Structure), resids : 
   assignment = assignment.merge_rare(dmat, RARE_FLOOR, opts.cutoff)
   return nil unless assignment.n_states > 1
 
-  # Drop frozen columns (almost no conformational diversity).
-  return nil if assignment.n_eff < NEFF_MIN
-
   # Merge away-facing side-chain states; backbone-only if none face the ligand.
-  faced = merge_ligand_away_states(assignment, dmat, structures, opts.residues, opts)
-  return nil unless faced
-  assignment, dmat = faced
-
-  # Exposed single-residue columns: only when n_eff > NEFF_MAX. Drop if too few
-  # holos contact ligand; otherwise cap the number of states to NEFF_MAX.to_i
-  # when it still exceeds that. Not every single-residue column is capped.
-  if resids.size == 1 && assignment.n_eff > NEFF_MAX
-    n_contact, n_holo = count_sidechain_ligand_contacts(resids[0], structures, opts.residues, SITE_RADIUS)
-    return nil if n_contact < compute_exposed_keep_min(n_holo)
-    if assignment.n_states > NEFF_MAX.to_i
-      assignment = assignment.cap(dmat, NEFF_MAX.to_i)
-      return nil unless assignment.n_states > 1
-    end
-  end
-
-  assignment
+  merge_ligand_away_states(assignment, structures, opts.residues, opts)
 end
 
 def build_state_matrix(structures : Array(Chem::Structure), opts : Options, units : Array(Array(ResId))) : StateMatrix
@@ -150,17 +128,13 @@ end
 # when the backbone comes within SITE_RADIUS in that same number of holos, or drop.
 # Loop blocks are left unchanged (pose already encodes facing).
 #
-# Returns nil if the unit is dropped. On success, *dmat* is passed through
-# unless the unit was reclustered on backbone — then a backbone distance
-# matrix is returned so a later exposed-state cap stays consistent with the
-# new labels.
+# Returns nil if the unit is dropped.
 private def merge_ligand_away_states(
   assignment : UnitAssignment,
-  dmat : HClust::DistanceMatrix,
   structures : Array(Chem::Structure),
   site_resids : Array(ResId),
   opts : Options,
-) : {UnitAssignment, HClust::DistanceMatrix}?
+) : UnitAssignment?
   resids = assignment.resids
   r2 = SITE_RADIUS * SITE_RADIUS
   n_holo = structures.count { |s| !find_site_ligand_heavies(s, site_resids).empty? }
@@ -178,14 +152,12 @@ private def merge_ligand_away_states(
     return nil if n_bb < min_frames
     bb = cluster_backbone_assignment(structures, resids, opts)
     return nil unless bb.n_states > 1
-    return nil if bb.n_eff < NEFF_MIN
-    dmat_bb = HClust::DistanceMatrix.new(structures) { |a, b| backbone_site_rmsd(a, b, resids) }
-    return {bb, dmat_bb}
+    return bb
   end
 
   # Multi-residue loop blocks, or at most one away state: nothing to merge.
   if resids.size > 1 || n_away <= 1
-    return {assignment, dmat}
+    return assignment
   end
 
   # Collapse every non-facing state into the most populated away state.
@@ -194,7 +166,7 @@ private def merge_ligand_away_states(
   target = away.max_by { |c| {counts[c], -c} }
   merged = UnitAssignment.new(assignment.resids, assignment.map { |c| c && (state_faces[c] ? c : target) }).relabel_by_population
   return nil unless merged.n_states > 1
-  {merged, dmat}
+  merged
 end
 
 private def cluster_backbone_assignment(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : UnitAssignment
