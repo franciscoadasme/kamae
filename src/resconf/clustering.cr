@@ -86,9 +86,10 @@ private def cluster_resolved_unit(structures : Array(Chem::Structure), resids : 
   # Hierarchical clustering → discrete conformational states.
   assignment = UnitAssignment.new(resids, HClust.linkage(dmat, opts.rule).labels(opts.cutoff))
 
-  # Merge states present in < RARE_FLOOR of the ensemble (outliers beyond
-  # RARE_MERGE_MAX are left unassigned).
-  assignment = assignment.merge_rare(dmat, RARE_FLOOR, RARE_MERGE_MAX)
+  # Merge states present in < RARE_FLOOR of the known structures. A rare
+  # structure joins the kept state with the nearest medoid only when it is
+  # within the clustering cutoff of some member of that state.
+  assignment = assignment.merge_rare(dmat, RARE_FLOOR, opts.cutoff)
   return nil unless assignment.n_states > 1
 
   # Drop frozen columns (almost no conformational diversity).
@@ -199,7 +200,7 @@ end
 private def cluster_backbone_assignment(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : UnitAssignment
   dmat = HClust::DistanceMatrix.new(structures) { |a, b| backbone_site_rmsd(a, b, resids) }
   labels = HClust.linkage(dmat, opts.rule).labels(opts.cutoff)
-  UnitAssignment.new(resids, labels).merge_rare(dmat, RARE_FLOOR, RARE_MERGE_MAX)
+  UnitAssignment.new(resids, labels).merge_rare(dmat, RARE_FLOOR, opts.cutoff)
 end
 
 # True if any side-chain heavy atom of *resids* lies within SITE_RADIUS of the

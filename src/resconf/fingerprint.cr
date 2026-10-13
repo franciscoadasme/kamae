@@ -11,9 +11,6 @@
 
 # Frequency floor for rare vs frequent states / joint fingerprints (5%).
 RARE_FLOOR = 0.05
-# Maximum distance (Å) from a rare-state structure to the nearest member of
-# its merge target; farther structures are left unassigned.
-RARE_MERGE_MAX = 2.5
 
 # Conformational assignment of one unit (or column) over the ensemble.
 struct UnitAssignment
