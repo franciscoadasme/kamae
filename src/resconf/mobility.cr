@@ -10,7 +10,7 @@ record ResidueMobility,
   bb_rmsf : Float64,    # backbone heavy-atom RMSF (Å)
   sc_rmsf : Float64,    # side-chain heavy-atom RMSF (Å)
   mobile : Bool,        # non-helical fingerprint residue above RMSF threshold
-  ligand_contact : Bool # any heavy atom within LIGAND_CONTACT of the pocket ligand
+  ligand_contact : Bool # any heavy atom within SITE_RADIUS of the pocket ligand
 
 # Connected group of mobile fingerprint residues (one loop block candidate).
 record LoopBlock,
@@ -51,7 +51,7 @@ def analyze_backbone_mobility(structures : Array(Chem::Structure), opts : Option
 
   mobilities = mobilities.map do |m|
     mobile = fingerprint_resids.includes?(m.resid) && m.sec != "H" && m.bb_rmsf > threshold
-    ligand_contact = mobile ? contacts_ligand?(m.resid, structures, opts.residues, LIGAND_CONTACT) : false
+    ligand_contact = mobile ? contacts_ligand?(m.resid, structures, opts.residues, SITE_RADIUS) : false
     ResidueMobility.new(
       resid: m.resid,
       name: m.name,

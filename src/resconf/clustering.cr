@@ -1,6 +1,5 @@
 # Per-unit clustering → StateMatrix.
 
-FACE_CUTOFF     =  4.5
 FACE_MIN_FRAC   = 0.01
 FACE_MIN_COUNT  =    3
 NEFF_MAX        =  4.0
@@ -106,7 +105,7 @@ private def cluster_resolved_unit(structures : Array(Chem::Structure), resids : 
   # holos contact ligand; otherwise cap the number of states to NEFF_MAX.to_i
   # when it still exceeds that. Not every single-residue column is capped.
   if resids.size == 1 && assignment.n_eff > NEFF_MAX
-    n_contact, n_holo = count_sidechain_ligand_contacts(resids[0], structures, opts.residues, LIGAND_CONTACT)
+    n_contact, n_holo = count_sidechain_ligand_contacts(resids[0], structures, opts.residues, SITE_RADIUS)
     return nil if n_contact < compute_exposed_keep_min(n_holo)
     if assignment.n_states > NEFF_MAX.to_i
       assignment = assignment.cap(dmat, NEFF_MAX.to_i)
@@ -165,7 +164,7 @@ private def merge_ligand_away_states(
   opts : Options,
 ) : {UnitAssignment, HClust::DistanceMatrix}?
   resids = assignment.resids
-  r2 = FACE_CUTOFF * FACE_CUTOFF
+  r2 = SITE_RADIUS * SITE_RADIUS
   n_holo = structures.count { |s| !find_site_ligand_heavies(s, site_resids).empty? }
   min_frames = Math.max(FACE_MIN_COUNT, (FACE_MIN_FRAC * n_holo).ceil.to_i)
   faces_frame = structures.map { |s| unit_sc_faces_ligand?(s, resids, site_resids, r2) }
@@ -206,7 +205,7 @@ private def cluster_backbone_assignment(structures : Array(Chem::Structure), res
   UnitAssignment.new(resids, labels).merge_rare(dmat, RARE_FLOOR, RARE_MERGE_MAX)
 end
 
-# True if any side-chain heavy atom of *resids* lies within FACE_CUTOFF of the
+# True if any side-chain heavy atom of *resids* lies within SITE_RADIUS of the
 # pocket ligand. Apo frames (no site ligand) do not count as facing.
 private def unit_sc_faces_ligand?(structure : Chem::Structure, resids : Array(ResId), site_resids : Array(ResId), r2 : Float64) : Bool
   ligands = find_site_ligand_heavies(structure, site_resids)

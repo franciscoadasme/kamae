@@ -1,5 +1,3 @@
-SITE_LIGAND_CUT   =  7.0
-LIGAND_CONTACT    =  5.0
 CONTACT_HOLO_FRAC = 0.10
 CONTACT_HOLO_MIN  =    5
 
@@ -11,15 +9,15 @@ def find_ligand_molecules(structure : Chem::Structure) : Array(Chem::AtomView)
 end
 
 # One pocket ligand per structure: the ligand molecule with the closest heavy
-# atom to any site heavy atom, within SITE_LIGAND_CUT.
-def find_site_ligand_heavies(structure : Chem::Structure, site_resids : Array(ResId), cutoff : Float64 = SITE_LIGAND_CUT) : Array(Chem::Atom)
-  find_site_ligand(structure, site_resids, cutoff).try(&.select(&.heavy?).to_a) || [] of Chem::Atom
+# atom to any site heavy atom, within SITE_RADIUS.
+def find_site_ligand_heavies(structure : Chem::Structure, site_resids : Array(ResId)) : Array(Chem::Atom)
+  find_site_ligand(structure, site_resids).try(&.select(&.heavy?).to_a) || [] of Chem::Atom
 end
 
-def find_site_ligand(structure : Chem::Structure, site_resids : Array(ResId), cutoff : Float64 = SITE_LIGAND_CUT) : Chem::AtomView?
+def find_site_ligand(structure : Chem::Structure, site_resids : Array(ResId)) : Chem::AtomView?
   site_atoms = collect_site_heavy_atoms(structure, site_resids)
   return if site_atoms.empty?
-  r2 = cutoff * cutoff
+  r2 = SITE_RADIUS * SITE_RADIUS
   best = nil.as(Chem::AtomView?)
   best_d2 = Float64::MAX
   find_ligand_molecules(structure).each do |lig|

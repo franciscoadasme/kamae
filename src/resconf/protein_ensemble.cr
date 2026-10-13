@@ -4,14 +4,13 @@
 # Chains of at least PROTEIN_CHAIN_MIN amino acids are grouped into families
 # by shared sequence k-mers (`families` on `ProteinEnsemble`). In each
 # structure, `ChainGroup#site_chains` is the subset within
-# LIGAND_SITE_RADIUS of the ligand with the most protein contacts, among
+# SITE_RADIUS of the ligand with the most protein contacts, among
 # ligands contacting the most common combination of families. It is nil when
 # no ligand contacts that combination.
 
-ENTITY_SIMILARITY  = 0.5
-KMER_SIZE          =   3
-LIGAND_SITE_RADIUS = 5.0
-PROTEIN_CHAIN_MIN  =  20
+ENTITY_SIMILARITY = 0.5
+KMER_SIZE         =   3
+PROTEIN_CHAIN_MIN =  20
 # Missing residues are `X` in an aligned sequence, so an unknown residue
 # code must be a different character.
 UNKNOWN_CODE = '?'
@@ -137,9 +136,9 @@ private def family_ids(chains : Array(Chem::Chain), families : Hash(Chem::Chain,
 end
 
 # One candidate per ligand of *structure*: the chains among *chains* with a
-# heavy atom within LIGAND_SITE_RADIUS of it, and the number of such atoms.
+# heavy atom within SITE_RADIUS of it, and the number of such atoms.
 private def find_site_candidates(structure : Chem::Structure, chains : Array(Chem::Chain)) : Array(SiteCandidate)
-  r2 = LIGAND_SITE_RADIUS * LIGAND_SITE_RADIUS
+  r2 = SITE_RADIUS * SITE_RADIUS
   structure.detect_ligands.compact_map do |ligand|
     ligand_pos = ligand.select(&.heavy?).map(&.pos)
     contacts = chains.map do |chain|
