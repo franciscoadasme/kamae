@@ -57,7 +57,7 @@ require "./resconf/chem_ext"
 require "./resconf/hclust_ext"
 require "./resconf/resid"
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 module Resconf
   Log = ::Log.for("resconf")
