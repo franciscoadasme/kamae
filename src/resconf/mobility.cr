@@ -1,25 +1,20 @@
-# Loop blocks from high-RMSF non-helical fingerprint residues.
-
-RMSF_BB_FLOOR = 0.40
+# Loop blocks from non-helical fingerprint residues whose backbone (N, Cα, C)
+# has more than one complete-linkage state at the clustering cutoff.
+# DSSP only keeps helices out of blocks.
 
 # Per-residue mobility over the ensemble (used to decide loop blocks).
 record ResidueMobility,
   resid : ResId,
-  name : String,
   sec : String,         # DSSP one-letter secondary-structure code
-  bb_rmsf : Float64,    # backbone heavy-atom RMSF (Å)
-  sc_rmsf : Float64,    # side-chain heavy-atom RMSF (Å)
-  mobile : Bool,        # non-helical fingerprint residue above RMSF threshold
+  mobile : Bool,        # non-helical fingerprint residue with more than one backbone state
   ligand_contact : Bool # any heavy atom within SITE_RADIUS of the pocket ligand
 
-# Connected group of mobile fingerprint residues (one loop block candidate).
+# Connected group of mobile, ligand-contacting fingerprint residues.
 record LoopBlock,
   resids : Array(ResId),
   ligand_contact : Bool
 
 record MobilityAnalysis,
-  rmsf_threshold : Float64,
-  median_helical_bb_rmsf : Float64,
   residues : Array(ResidueMobility),
   loop_blocks : Array(LoopBlock) do
   def mobile_resids : Set(ResId)
@@ -27,45 +22,29 @@ record MobilityAnalysis,
   end
 end
 
-# Mark non-helical fingerprint residues (*candidates*) whose backbone RMSF
-# exceeds max(median helical bb RMSF, RMSF_BB_FLOOR). Threshold is
-# ensemble-adaptive.
+# Mark non-helical fingerprint residues (*candidates*) whose backbone
+# (N, Cα, C) forms more than one complete-linkage state at *opts.cutoff*.
+# A reference with no helix is still clustered.
 def analyze_backbone_mobility(structures : Array(Chem::Structure), opts : Options, candidates : Array(ResId), frame : Chem::Structure? = nil) : MobilityAnalysis
   ref = frame || structures[0]
   Chem::Protein::DSSP.assign(ref)
 
-  mobilities = [] of ResidueMobility
-  helical_bb = [] of Float64
-  ref.residues.each do |residue|
-    next unless protein_like?(residue)
-    mobility = measure_residue_mobility(structures, residue.id, ref)
-    next unless mobility
-    helical_bb << mobility.bb_rmsf if residue.sec.type.helical?
-    mobilities << mobility
-  end
-
-  abort "error: no helical residues for RMSF threshold" if helical_bb.empty?
-  med = median(helical_bb)
-  threshold = Math.max(med, RMSF_BB_FLOOR)
   fingerprint_resids = Set.new(candidates)
-
-  mobilities = mobilities.map do |m|
-    mobile = fingerprint_resids.includes?(m.resid) && m.sec != "H" && m.bb_rmsf > threshold
-    ligand_contact = mobile ? contacts_ligand?(m.resid, structures, opts.residues, SITE_RADIUS) : false
-    ResidueMobility.new(
-      resid: m.resid,
-      name: m.name,
-      sec: m.sec,
-      bb_rmsf: m.bb_rmsf,
-      sc_rmsf: m.sc_rmsf,
+  mobilities = [] of ResidueMobility
+  candidates.each do |resid|
+    residue = ref.dig?(resid)
+    next unless residue && protein_like?(residue)
+    mobile = !residue.sec.type.helical? && backbone_state_count(structures, resid, opts) > 1
+    ligand_contact = mobile && contacts_ligand?(resid, structures, opts.residues, SITE_RADIUS)
+    mobilities << ResidueMobility.new(
+      resid: resid,
+      sec: residue.sec.type.code.to_s,
       mobile: mobile,
       ligand_contact: ligand_contact,
     )
   end
 
   MobilityAnalysis.new(
-    rmsf_threshold: threshold,
-    median_helical_bb_rmsf: med,
     residues: mobilities,
     loop_blocks: group_mobile_into_loop_blocks(mobilities, ref, fingerprint_resids),
   )
@@ -93,51 +72,32 @@ def build_fingerprint_units(candidates : Array(ResId), analysis : MobilityAnalys
   units
 end
 
-private def median(values : Array(Float64)) : Float64
-  return 0.0 if values.empty?
-  sorted = values.sort
-  mid = sorted.size // 2
-  sorted.size.even? ? (sorted[mid - 1] + sorted[mid]) / 2.0 : sorted[mid]
+# Complete-linkage states of one residue's backbone (N, CA, C) at the
+# clustering cutoff (2 Å by default).
+def backbone_state_count(structures : Array(Chem::Structure), resid : ResId, opts : Options) : Int32
+  known = structures.select { |s| resolve_residue(s, resid) }
+  return 1 if known.size <= 1
+  dmat = HClust::DistanceMatrix.new(known) { |a, b| backbone_site_rmsd(a, b, [resid]) }
+  HClust.linkage(dmat, :complete).labels(opts.cutoff).uniq.size
 end
 
 private def protein_like?(residue : Chem::Residue) : Bool
   residue.protein? || residue.has_backbone?
 end
 
-private def measure_residue_mobility(structures : Array(Chem::Structure), resid : ResId, ref : Chem::Structure) : ResidueMobility?
-  instances = structures.compact_map { |s| resolve_residue(s, resid) }
-  return nil if instances.size <= 1
-  return nil unless instances[0].has_backbone?
-  ref_residue = instances[0]
-  bb_rmsf = residue_rmsf(instances, BACKBONE_NAMES.to_a)
-  sc_names = ref_residue.atoms.select(&.heavy?).map(&.name).reject { |n| BACKBONE_NAMES.includes?(n) }
-  sc_rmsf = residue_rmsf(instances, sc_names)
-  ResidueMobility.new(
-    resid: resid,
-    name: ref_residue.name,
-    sec: ref.dig(resid).sec.type.code.to_s,
-    bb_rmsf: bb_rmsf,
-    sc_rmsf: sc_rmsf,
-    mobile: false,
-    ligand_contact: false,
-  )
-end
-
-# Connect mobile fingerprint residues into loop-block candidates. Only residues
-# from *fingerprint_resids* are ever included.
+# Connect mobile fingerprint residues that contact the ligand. Only those
+# residues are block members; a mobile residue that never contacts is omitted
+# here and dropped by `build_fingerprint_units`.
 private def group_mobile_into_loop_blocks(
   mobilities : Array(ResidueMobility),
   ref : Chem::Structure,
   fingerprint_resids : Set(ResId),
 ) : Array(LoopBlock)
-  by_resid = {} of ResId => ResidueMobility
-  mobilities.each { |m| by_resid[m.resid] = m }
-  candidates = mobilities
-    .select { |m| m.mobile && fingerprint_resids.includes?(m.resid) }
+  contacting = mobilities
+    .select { |m| m.mobile && m.ligand_contact && fingerprint_resids.includes?(m.resid) }
     .map(&.resid)
-  connect_fingerprint_residues(candidates, ref, fingerprint_resids).map do |resids|
-    ligand_contact = resids.any? { |id| by_resid[id]?.try(&.ligand_contact) }
-    LoopBlock.new(resids: resids, ligand_contact: ligand_contact || false)
+  connect_fingerprint_residues(contacting, ref, fingerprint_resids).map do |resids|
+    LoopBlock.new(resids: resids, ligand_contact: true)
   end
 end
 

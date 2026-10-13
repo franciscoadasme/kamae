@@ -17,11 +17,11 @@ def select_receptors(structures : Array(Chem::Structure), opts : Options, frame 
   candidates = find_variable_residues(structures, opts.residues, opts)
   abort "error: no site residue has multiple conformations" if candidates.empty?
 
-  # Group high-RMSF non-helical candidates that contact ligand into loop
-  # blocks; drop mobile residues that never contact.
+  # Group non-helical candidates whose backbone has more than one state
+  # into loop blocks; drop mobile residues that never contact the ligand.
   analysis = analyze_backbone_mobility(structures, opts, candidates, frame)
   units = build_fingerprint_units(candidates, analysis)
-  abort "error: RMSF filter removed every fingerprint residue" if units.empty?
+  abort "error: loop blocks removed every fingerprint residue" if units.empty?
 
   # Per unit: cluster conformations, merge rare states, and merge
   # away-facing side chains (or recluster on the backbone if none face).

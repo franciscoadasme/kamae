@@ -97,28 +97,6 @@ def site_rmsd(a : Chem::Structure, b : Chem::Structure, resids : Array(ResId)) :
   Chem::AtomView.new(atoms_a).rmsd Chem::AtomView.new(atoms_b), use_symmetry: true
 end
 
-def residue_rmsf(instances : Array(Chem::Residue), names : Indexable(String)?) : Float64
-  ref = instances[0]
-  atoms_ref = if names
-                named_heavy(ref, names)
-              else
-                ref.atoms.select(&.heavy?).to_a
-              end
-  return 0.0 if atoms_ref.empty?
-
-  frames = instances.map do |res|
-    atoms = atoms_ref.map do |atom|
-      res[atom.name]? || return 0.0
-    end
-    Chem::AtomView.new(atoms)
-  end
-  Chem.rmsf(frames)
-end
-
 def sidechain_heavies(residue : Chem::Residue) : Array(Chem::Atom)
   residue.atoms.select { |a| a.heavy? && !BACKBONE_NAMES.includes?(a.name) }.to_a
-end
-
-private def named_heavy(residue : Chem::Residue, names : Indexable(String)) : Array(Chem::Atom)
-  names.compact_map { |n| residue[n]? }.select(&.heavy?)
 end
