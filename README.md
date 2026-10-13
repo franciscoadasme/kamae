@@ -125,26 +125,27 @@ set `LOG_LEVEL=error` to silence them.
    1 Å width) so the fit rests on the rigid part of the pocket. The result
    does not depend on the orientation in which structures are given.
 3. **Fingerprint units.** Only site residues with more than one
-   conformation are candidates (each residue clustered alone as in step 4,
-   before any filter; GLY and PRO are never clustered). Backbone RMSF is
-   measured per candidate. Mobile non-helical candidates that contact the
-   pocket ligand are merged into loop blocks; those that do not are
-   dropped.
+   conformation are candidates (each residue clustered alone at 2 Å,
+   complete linkage, before any filter; GLY and PRO are never clustered).
+   DSSP is used only to keep helices out of loop blocks. A non-helical
+   candidate is mobile when its backbone (N, Cα, C) has more than one
+   complete-linkage state at 2 Å. Mobile residues within 5 Å of the pocket
+   ligand that share a secondary-structure element, or are sequence
+   neighbors, become one block (every heavy atom). A mobile residue that
+   never contacts the ligand is dropped.
 4. **Unit states.** Each unit's in-place heavy-atom conformations are
-   clustered (hierarchical, `--linkage` at `--cutoff`). Then:
-   - each structure in a rare state (< 5 % of structures) is merged into
-     the kept state with the nearest medoid only if it lies within 2.5 Å
-     of at least one member of that state; otherwise it is left unassigned
+   clustered (hierarchical, complete linkage at 2 Å by default). Then:
+   - a state under 5 % of known structures is merged into the kept state
+     whose medoid is nearest, if the structure lies within the clustering
+     cutoff of any member of that state; otherwise it is left unassigned
      (`?`) and reported;
-   - units with too few effective states are dropped, and those with too
-     many without ligand contact are dropped or capped;
-   - side-chain states that never face the ligand (side chain within
-     4.5 Å) are merged, where facing in fewer than max(3, 1 % of holo)
+   - side-chain states that never face the ligand (a side-chain heavy atom
+     within 5 Å) are merged, where facing in fewer than max(3, 1 % of holo)
      structures counts as never; if none does, the unit is reclustered on
-     the backbone when the backbone contacts the ligand in at least
-     max(5, 10 % of holo) structures, or dropped.
-5. **Redundant columns.** Units whose states are highly correlated
-   (normalized mutual information) are pruned.
+     the backbone when the backbone comes within 5 Å in that same number of
+     holo structures, or dropped. Loop blocks are left unchanged.
+5. **Redundant columns.** A later column known on the same structures, and
+   labeling them with the same partition (including a relabeling), is dropped.
 6. **Representatives.** One site-RMSD medoid is kept per unique
    fingerprint. Frequent fingerprints (≥ 5 %) are always kept, the rest
    are reduced by structural redundancy, and any medoid needed to cover

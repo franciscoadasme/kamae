@@ -9,31 +9,35 @@
 # 1. Resolve the binding site (`-r` or auto-detect from ligands) and, unless
 #    `--prealigned`, superimpose the ensemble on the site CA atoms (fit to the
 #    ensemble mean, iteratively down-weighting mobile atoms).
-# 2. Build fingerprint units from the residue list:
-#    - Keep residues with more than one conformation (per-residue clustering
-#      at the same cutoff, before any filter; GLY/PRO never).
-#    - Measure backbone/side-chain RMSF (DSSP secondary structure).
-#    - Non-helical list residues above an adaptive backbone-RMSF threshold
-#      that contact the pocket ligand are merged into loop blocks; those that
-#      do not contact ligand are dropped from the fingerprint.
+# 2. Build fingerprint units from the residue list. One distance per decision:
+#    - 2 Å, complete linkage: a residue state, a loop-block state, and medoid
+#      redundancy (N_ij). Keep residues with more than one conformation
+#      (GLY/PRO never). DSSP only keeps helices out of blocks; a structure
+#      with no helix is still clustered. A non-helical fingerprint residue is
+#      mobile when N, Cα, and C have more than one state. Mobile residues
+#      within 5 Å of the pocket ligand that share a secondary-structure
+#      element, or are sequence neighbors, become one block, clustered on
+#      every heavy atom. A mobile residue that never contacts the ligand is
+#      dropped.
+#    - The same 2 Å, single linkage, rare states only (step 3).
+#    - 5 Å: site radius, ligand contact, and the facing test.
+#    - max(3, 1%): site membership, facing votes, and the backbone fallback.
 # 3. For each unit, cluster in-place heavy-atom conformations (complete / 2 Å
 #    by default) into a UnitAssignment (residues + one label per structure), then:
-#    - Merge rare states (< 5% of structures) into the kept state with the
-#      nearest medoid; a structure farther than 2.5 Å from every member of
-#      that state is left unassigned (unknown state, `?`).
-#    - Drop the unit if the Shannon effective state count n_eff is too low
-#      (frozen) or, after later steps, too high without ligand contact
-#      (exposed rotamers: drop or cap).
-#    - Merge side-chain states that never face the ligand (facing in fewer
-#      than max(3, 1% of holos) structures counts as never); if no state
-#      faces, recluster on backbone (N,CA,C) when it contacts the ligand in
-#      enough holos, or drop the unit.
-# 4. Drop redundant fingerprint columns whose UnitAssignments have
-#    normalized mutual information (NMI) above a cutoff.
+#    - Merge a state under 5% of known structures into the kept state whose
+#      medoid is nearest, if the structure is within the clustering cutoff of
+#      any member of that state; otherwise leave it unassigned (`?`).
+#    - Merge side-chain states that never face the ligand (a side-chain heavy
+#      atom within 5 Å in fewer than max(3, 1% of holos) structures counts as
+#      never). If no state faces, recluster on the backbone (N, Cα, C) when
+#      the backbone meets that same count, or drop the unit. Loop blocks are
+#      left unchanged.
+# 4. Drop a later column that is known on the same structures as an earlier
+#    one and labels them with the same partition (a relabeling counts).
 # 5. Keep one site-RMSD medoid per unique Fingerprint code.
 # 6. Pin medoids whose Fingerprint is frequent (≥ 5%), then remove
-#    structurally redundant medoids on the N_ij=0 graph (Sci Rep 2021), and
-#    restore any medoid needed so every per-column state remains covered.
+#    structurally redundant medoids on the N_ij=0 graph at 2 Å (Sci Rep 2021),
+#    and restore any medoid needed so every per-column state remains covered.
 #
 # Fingerprint RMSD is in-place (no per-residue QCP). Side-chain symmetry uses
 # chem.cr templates; flippable Asn/Gln/His atoms take the closer assignment

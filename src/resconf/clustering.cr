@@ -1,4 +1,9 @@
 # Per-unit clustering → StateMatrix.
+#
+# Residue states, loop-block states, and N_ij use complete linkage at
+# `Options#cutoff` (2 Å). Rare-state membership is single linkage at that
+# same cutoff. Facing uses `SITE_RADIUS` and
+# `quorum`, the same max(3, 1%) rule as site membership.
 
 LARGE_RMSD      = 20.0
 NON_CLUSTERABLE = Set{"GLY", "PRO"}
