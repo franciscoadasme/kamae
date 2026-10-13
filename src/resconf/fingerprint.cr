@@ -55,23 +55,6 @@ struct UnitAssignment
     UnitAssignment.new(@resids, labels)
   end
 
-  # Shannon entropy H of the known-state distribution (bits).
-  def entropy : Float64
-    n = count_known.to_f
-    return 0.0 if n <= 0
-    h = 0.0
-    count_states.each do |c|
-      p = c / n
-      h -= p * Math.log2(p) if p > 0
-    end
-    h
-  end
-
-  # Effective number of states, 2^H.
-  def n_eff : Float64
-    2.0 ** entropy
-  end
-
   # Renumber labels 0..k-1 by descending population (#structures per state).
   def relabel_by_population : UnitAssignment
     counts = Hash(Int32, Int32).new(0)
@@ -118,33 +101,27 @@ struct UnitAssignment
     UnitAssignment.new(@resids, merged).relabel_by_population
   end
 
-  # Joint Shannon entropy H(self, other) for two columns (equal ensemble
-  # length) over the structures known in both.
-  def joint_entropy(other : UnitAssignment) : Float64
-    counts = Hash(Tuple(Int32, Int32), Int32).new(0)
-    @labels.zip(other) do |x, y|
-      counts[{x, y}] += 1 if x && y
+  # True when both columns are known on the same structures and their labels
+  # define the same partition (a relabeling, not necessarily the same integers).
+  def same_partition?(other : UnitAssignment) : Bool
+    return false unless size == other.size
+    forward = {} of Int32 => Int32
+    reverse = {} of Int32 => Int32
+    size.times do |i|
+      a = self[i]
+      b = other[i]
+      return false if a.nil? != b.nil?
+      next if a.nil? || b.nil?
+      if forward.has_key?(a)
+        return false unless forward[a] == b
+      elsif reverse.has_key?(b)
+        return false
+      else
+        forward[a] = b
+        reverse[b] = a
+      end
     end
-    n = counts.values.sum.to_f
-    return 0.0 if n <= 0
-    h = 0.0
-    counts.each_value do |c|
-      p = c / n
-      h -= p * Math.log2(p) if p > 0
-    end
-    h
-  end
-
-  # NMI = I / sqrt(H_a H_b), with I = H_a + H_b - H_joint, over the
-  # structures known in both columns. 0 if either is constant.
-  def normalized_mutual_information(other : UnitAssignment) : Float64
-    shared = (0...size).select { |i| self[i] && other[i] }
-    a = UnitAssignment.new(@resids, shared.map { |i| self[i] })
-    b = UnitAssignment.new(other.resids, shared.map { |i| other[i] })
-    ha = a.entropy
-    hb = b.entropy
-    return 0.0 if ha == 0.0 || hb == 0.0
-    (ha + hb - a.joint_entropy(b)) / Math.sqrt(ha * hb)
+    true
   end
 end
 
@@ -198,15 +175,15 @@ struct StateMatrix
     end
   end
 
-  # Keep one column from each group whose pairwise NMI exceeds *cutoff*.
-  def prune_redundant(cutoff : Float64) : StateMatrix
+  # Keep the earliest column from each group with an identical labeling.
+  def prune_redundant : StateMatrix
     n = @columns.size
     return self if n < 2
 
     parent = Array.new(n, &.itself)
     (0...n).each do |i|
       ((i + 1)...n).each do |j|
-        next unless @columns[i].normalized_mutual_information(@columns[j]) > cutoff
+        next unless @columns[i].same_partition?(@columns[j])
         ri = union_find_root(parent, i)
         rj = union_find_root(parent, j)
         parent[ri] = rj unless ri == rj
@@ -217,30 +194,10 @@ struct StateMatrix
     n.times { |i| groups[union_find_root(parent, i)] << i }
 
     keep = Set(Int32).new
-    groups.each_value do |members|
-      winner = members[0]
-      members.each do |i|
-        winner = i unless prefer_column?(@columns[winner], @columns[i], winner, i)
-      end
-      keep << winner
-    end
-
+    groups.each_value { |members| keep << members.min }
     idx = (0...n).select { |i| keep.includes?(i) }
     StateMatrix.new(idx.map { |i| @columns[i] })
   end
-end
-
-# Prefer columns with 2–4 states, then higher n_eff, then earlier index.
-private def prefer_column?(a : UnitAssignment, b : UnitAssignment, index_a : Int32, index_b : Int32) : Bool
-  na = a.n_states
-  nb = b.n_states
-  ra = na >= 2 && na <= 4
-  rb = nb >= 2 && nb <= 4
-  return true if ra && !rb
-  return false if rb && !ra
-  return true if a.n_eff > b.n_eff
-  return false if b.n_eff > a.n_eff
-  index_a < index_b
 end
 
 private def union_find_root(parent : Array(Int32), x : Int32) : Int32

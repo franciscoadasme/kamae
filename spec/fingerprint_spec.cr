@@ -54,4 +54,31 @@ describe UnitAssignment do
       merged.to_a.should eq [0, 0, 0, 1, 1, 1, 0, nil]
     end
   end
+
+  describe "#same_partition?" do
+    it "matches a relabeling known on the same structures" do
+      a = make_assignment([0, 0, 1, nil])
+      b = make_assignment([2, 2, 0, nil])
+      a.same_partition?(b).should be_true
+    end
+
+    it "rejects a different unknown pattern or a non-bijective labeling" do
+      make_assignment([0, 0, 1, nil]).same_partition?(make_assignment([0, 0, 1, 1])).should be_false
+      make_assignment([0, 0, 1, 1]).same_partition?(make_assignment([0, 1, 0, 0])).should be_false
+    end
+  end
+end
+
+describe StateMatrix do
+  describe "#prune_redundant" do
+    it "keeps the earlier column when two columns are the same partition" do
+      columns = [
+        UnitAssignment.new([ResId.new('A', 1)], [0, 0, 1, nil].map(&.as(Int32?))),
+        UnitAssignment.new([ResId.new('A', 2)], [1, 1, 0, nil].map(&.as(Int32?))),
+        UnitAssignment.new([ResId.new('A', 3)], [0, 1, 0, 1].map(&.as(Int32?))),
+      ]
+      kept = StateMatrix.new(columns).prune_redundant
+      kept.column_labels.should eq ["A:1", "A:3"]
+    end
+  end
 end

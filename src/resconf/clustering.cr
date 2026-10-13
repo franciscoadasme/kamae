@@ -1,6 +1,5 @@
 # Per-unit clustering → StateMatrix.
 
-NMI_CUTOFF      =  0.7
 LARGE_RMSD      = 20.0
 NON_CLUSTERABLE = Set{"GLY", "PRO"}
 
@@ -28,9 +27,9 @@ def select_receptors(structures : Array(Chem::Structure), opts : Options, frame 
   # away-facing side chains (or recluster on the backbone if none face).
   matrix = build_state_matrix(structures, opts, units)
 
-  # If two columns share nearly the same partition (high NMI), keep one.
-  matrix = matrix.prune_redundant(NMI_CUTOFF) unless matrix.empty?
-  abort "error: NMI prune removed every fingerprint residue" if matrix.empty?
+  # If two columns label the structures with the same partition, keep the earlier one.
+  matrix = matrix.prune_redundant unless matrix.empty?
+  abort "error: identical-column prune removed every fingerprint residue" if matrix.empty?
 
   fingerprints = matrix.fingerprints
   # Medoids → pin frequent → drop N_ij=0-redundant → restore missing states.
