@@ -101,11 +101,48 @@ def write_representatives(prefix : Path, repr : Array(Chem::Structure)) : Nil
   puts "Structures dumped to #{path}"
 end
 
+# Expanded path plus a zero-padded index. Equal keys are the same file entry.
+def set_source_key(structure : Chem::Structure, path : Path | String, index : Int32) : String
+  key = "#{Path[path].expand}:#{index.to_s.rjust(8, '0')}"
+  structure.metadata["source_key"] = key
+  key
+end
+
+def source_key(structure : Chem::Structure) : String?
+  structure.metadata["source_key"]?.try(&.as_s?)
+end
+
+def append_structures(structures : Array(Chem::Structure), path : Path | String) : Nil
+  Array(Chem::Structure).read(path).each_with_index do |structure, index|
+    set_source_key(structure, path, index)
+    structures << structure
+  end
+end
+
+# Files and directories, in the order given. A directory contributes its
+# structure files in path order.
+def load_structures(paths : Array(Path)) : Array(Chem::Structure)
+  structures = [] of Chem::Structure
+  paths.each do |path|
+    if Dir.exists?(path)
+      %w(*.pdb *.mae *.maegz *.mae.gz).each do |pattern|
+        Dir.glob(path.join(pattern).to_s).sort.each do |file|
+          append_structures structures, file
+        end
+      end
+    else
+      append_structures structures, path
+    end
+  end
+  abort "error: no structures loaded" if structures.empty?
+  structures
+end
+
 def read_structure(path : String) : Chem::Structure
   abort "error: file not found: #{path}" unless File.file?(path)
   abort "error: #{path} is not a structure file" unless Chem.guess_format?(path, Chem::Structure)
   structure = Chem::Structure.read(path)
-  Resconf.set_source_key(structure, path, 0)
+  set_source_key(structure, path, 0)
   structure
 end
 
@@ -131,7 +168,7 @@ begin
       elsif Chem.guess_format?(str, Chem::Structure)
         structure = read_structure(str)
         opts.renumber_ref = structure
-        if opts.reference && Resconf.source_key(opts.reference.not_nil!) != Resconf.source_key(structure)
+        if opts.reference && source_key(opts.reference.not_nil!) != source_key(structure)
           Resconf::Log.warn { "--renumber=#{str} overrides --reference" }
         end
         opts.reference = structure
@@ -178,7 +215,7 @@ begin
 
   # --- pipeline ---------------------------------------------------------------
 
-  structures = Resconf.load_structures(ARGV.map { |arg| Path[arg] })
+  structures = load_structures(ARGV.map { |arg| Path[arg] })
   puts "Loaded #{structures.size} structures"
 
   parent = prefix.parent

@@ -53,7 +53,7 @@
 #
 # Layout (src/resconf/):
 #   chem_ext, hclust_ext, resid, geometry, ligand, protein_ensemble, site, renumber,
-#   fingerprint, mobility, clustering, representatives, io
+#   fingerprint, mobility, clustering, representatives
 
 require "chem"
 require "hclust"
@@ -102,7 +102,6 @@ end
 require "./resconf/clustering"
 require "./resconf/fingerprint"
 require "./resconf/geometry"
-require "./resconf/io"
 require "./resconf/ligand"
 require "./resconf/mobility"
 require "./resconf/protein_ensemble"
