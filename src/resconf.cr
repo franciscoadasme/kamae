@@ -44,8 +44,7 @@
 # unless both residues have hydrogens.
 # Ligand detection follows Maestro LigandParameters.
 # Residues missing a template heavy atom (or absent) are ignored in that
-# structure by every step (unknown state); those ignored in most structures
-# are dropped from the site.
+# structure by every step (unknown state).
 #
 # Library entry point (`require "resconf"`). Everything callable lives on
 # `Resconf`; the command-line tool is src/cli.cr. Failures raise

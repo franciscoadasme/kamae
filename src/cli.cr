@@ -40,6 +40,18 @@ def write_binding_site(prefix : Path, resids : Array(Resconf::ResId)) : Nil
   puts "Binding site (#{resids.size} residues) dumped to #{path}"
 end
 
+# Drop a site residue unresolved in more than this fraction of structures.
+MIN_RESOLVED_FRAC = 0.5
+
+# Site residues absent or missing a template heavy atom, with the titles of
+# those structures.
+def find_unresolved_residues(structures : Array(Chem::Structure), site : Array(Resconf::ResId)) : Hash(Resconf::ResId, Array(String))
+  site.each_with_object({} of Resconf::ResId => Array(String)) do |rid, unresolved|
+    titles = structures.reject { |s| s.dig?(rid).try(&.complete?) }.map(&.title)
+    unresolved[rid] = titles unless titles.empty?
+  end
+end
+
 def report_unresolved(unresolved : Hash(Resconf::ResId, Array(String)), dropped : Array(Resconf::ResId), n_structures : Int32) : Nil
   Resconf::Log.warn do
     String.build do |io|
@@ -236,9 +248,9 @@ begin
     puts "Detected binding site (#{opts.residues.size} residues)"
   end
 
-  unresolved = Resconf.find_unresolved_residues(structures, opts.residues)
+  unresolved = find_unresolved_residues(structures, opts.residues)
   unless unresolved.empty?
-    max_unresolved = (1 - Resconf::MIN_RESOLVED_FRAC) * structures.size
+    max_unresolved = (1 - MIN_RESOLVED_FRAC) * structures.size
     dropped = unresolved.select { |_, titles| titles.size > max_unresolved }.keys
     opts.residues.reject! &.in?(dropped)
     report_unresolved unresolved, dropped, structures.size

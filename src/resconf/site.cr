@@ -11,7 +11,6 @@ module Resconf
   # it) and of the same type in every structure that has them. Incomplete
   # residues are ignored.
 
-  MIN_RESOLVED_FRAC = 0.5
   private POCKET_OVERLAP    = 0.5
   # A residue, a facing vote, or a backbone contact counts at max(count, fraction).
   private QUORUM_COUNT =    3
@@ -64,15 +63,6 @@ module Resconf
       Resconf::Log.warn { "Dropped site residues of a different type in some structures: #{dropped.join(',')}" }
     end
     site.sort_by! { |r| {r.chain.ord, r.number, (r.insertion_code || ' ').ord} }
-  end
-
-  # Site residues unresolved (absent or incomplete) in some structures, with
-  # the titles of those structures.
-  def self.find_unresolved_residues(structures : Array(Chem::Structure), site : Array(ResId)) : Hash(ResId, Array(String))
-    site.each_with_object({} of ResId => Array(String)) do |rid, unresolved|
-      titles = structures.reject { |s| resolve_residue(s, rid) }.map(&.title)
-      unresolved[rid] = titles unless titles.empty?
-    end
   end
 
   private def self.canonicalize_resname(name : String) : String
