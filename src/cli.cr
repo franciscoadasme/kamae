@@ -1,3 +1,4 @@
+require "csv"
 require "option_parser"
 require "./resconf"
 
@@ -22,6 +23,82 @@ def read_fasta(path : String) : String
     return sequence unless sequence.empty?
   end
   abort "error: no sequences in #{path}"
+end
+
+def write_csv(path : String | Path, header : Array(String), rows : Array(Array(T))) : Nil forall T
+  File.open(path, "w") do |io|
+    CSV.build(io) do |csv|
+      csv.row header
+      rows.each { |row| csv.row row }
+    end
+  end
+end
+
+def write_binding_site(prefix : Path, resids : Array(Resconf::ResId)) : Nil
+  path = "#{prefix}_binding-site.txt"
+  File.write path, resids.map(&.to_s).join(',') + "\n"
+  puts "Binding site (#{resids.size} residues) dumped to #{path}"
+end
+
+def report_unresolved(unresolved : Hash(Resconf::ResId, Array(String)), dropped : Array(Resconf::ResId), n_structures : Int32) : Nil
+  Resconf::Log.warn do
+    String.build do |io|
+      io << "Ignored incomplete or missing site residues in some structures:\n"
+      unresolved.each do |rid, titles|
+        io << "  " << rid << " in " << titles.first(5).join(' ')
+        io << " +" << titles.size - 5 << " more" if titles.size > 5
+        io << " (dropped: unresolved in " << titles.size << " of " << n_structures << ')' if dropped.includes?(rid)
+        io << '\n'
+      end
+      io << "Consider filling missing atoms and residues (e.g., PDBFixer, MODELLER, or Schrödinger's Protein Preparation Wizard)"
+    end
+  end
+end
+
+def report_unassigned(unassigned : Hash(String, Array(String)), cutoff : Float64) : Nil
+  Resconf::Log.warn do
+    String.build do |io|
+      io << "Left rare-state structures unassigned (farther than " << cutoff
+      io << " Å from every member of the nearest kept state):"
+      unassigned.each do |label, titles|
+        io << "\n  " << label << " in " << titles.first(5).join(' ')
+        io << " +" << titles.size - 5 << " more" if titles.size > 5
+      end
+    end
+  end
+end
+
+def write_fingerprints(prefix : Path, structures : Array(Chem::Structure), selection : Resconf::Selection) : Nil
+  matrix = selection.matrix
+  File.write "#{prefix}_reslist.csv", matrix.column_labels.join(',') + "\n"
+
+  header = ["receptor"] + matrix.column_labels
+  table = structures.map(&.title).zip(selection.fingerprints).map do |title, fp|
+    [title] + fp.map { |state| state.try(&.to_s) || "?" }
+  end
+  write_csv "#{prefix}_conf.csv", header, table
+
+  probs = matrix.probabilities
+  nconf = probs[0]?.try(&.size) || 0
+  header = [""] + (1..nconf).map(&.to_s)
+  table = matrix.column_labels.zip(probs).map do |lab, probs_row|
+    [lab] + probs_row.map { |p| "%0.3f" % p }
+  end
+  write_csv "#{prefix}_conf-prob.csv", header, table
+  puts "Residue conf. dumped to #{prefix}_conf.csv"
+end
+
+def write_representatives(prefix : Path, repr : Array(Chem::Structure)) : Nil
+  ids = repr.map &.title
+  puts "Selected receptors (#{repr.size}): #{ids.join(' ')}"
+
+  path = "#{prefix}_repr.txt"
+  File.write path, ids.join(',') + "\n"
+  puts "List of structures dumped to #{path}"
+
+  path = "#{prefix}_repr.maegz"
+  repr.to_maestro path
+  puts "Structures dumped to #{path}"
 end
 
 def read_structure(path : String) : Chem::Structure
@@ -127,11 +204,11 @@ begin
     max_unresolved = (1 - Resconf::MIN_RESOLVED_FRAC) * structures.size
     dropped = unresolved.select { |_, titles| titles.size > max_unresolved }.keys
     opts.residues.reject! &.in?(dropped)
-    Resconf.report_unresolved unresolved, dropped, structures.size
+    report_unresolved unresolved, dropped, structures.size
     abort "error: no site residue resolved in most structures" if opts.residues.empty?
   end
 
-  Resconf.write_binding_site prefix, opts.residues
+  write_binding_site prefix, opts.residues
 
   frame = opts.reference || Resconf.select_frame(structures)
 
@@ -143,12 +220,12 @@ begin
   puts "Clustering at #{opts.cutoff} A (#{opts.rule.to_s.downcase})..."
   selection = Resconf.select_receptors(structures, opts, frame)
   unassigned = Resconf.find_unassigned_outliers(structures, selection.matrix)
-  Resconf.report_unassigned unassigned, opts.cutoff unless unassigned.empty?
+  report_unassigned unassigned, opts.cutoff unless unassigned.empty?
   puts "Found #{selection.candidates.size} of #{opts.residues.size} site residues with multiple conformations"
   puts "Found #{selection.matrix.size} fingerprint columns with two or more distinct conformations"
-  Resconf.write_fingerprints prefix, structures, selection
+  write_fingerprints prefix, structures, selection
   puts "Unique fingerprints: #{selection.fingerprints.uniq.size}"
-  Resconf.write_representatives prefix, selection.representatives
+  write_representatives prefix, selection.representatives
 rescue ex : Resconf::Error
   abort "error: #{ex.message}"
 end

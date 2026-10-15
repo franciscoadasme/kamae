@@ -56,7 +56,6 @@
 #   fingerprint, mobility, clustering, representatives, io
 
 require "chem"
-require "csv"
 require "hclust"
 
 require "./resconf/chem_ext"
