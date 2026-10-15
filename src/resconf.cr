@@ -66,7 +66,8 @@ require "./resconf/resid"
 module Resconf
   Log = ::Log.for("resconf")
 
-  VERSION = "0.2.0"
+  # shard.yml is the only copy of the version (`shards version` at compile time).
+  VERSION = {{ `shards version "#{__DIR__}/.."`.chomp.stringify }}
 
   # Pipeline failure a caller can rescue. The CLI prints it and exits.
   class Error < Exception
