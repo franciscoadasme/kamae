@@ -70,7 +70,7 @@ describe "#renumber_ensemble" do
       add_chain builder, 'A', sequence, first_number: 101
       add_ligand builder, near: 10
     end
-    renumber_ensemble([structure], "GS" + sequence)
+    Resconf.renumber_ensemble([structure], "GS" + sequence)
     residue_ids(structure, 'A').map(&.[0]).should eq (3..35).to_a
   end
 
@@ -79,7 +79,7 @@ describe "#renumber_ensemble" do
       add_chain builder, 'A', sequence.insert(15, "WW")
       add_ligand builder, near: 10
     end
-    renumber_ensemble([structure], sequence)
+    Resconf.renumber_ensemble([structure], sequence)
     residue_ids(structure, 'A')[14, 4].should eq [{15, nil}, {15, 'A'}, {15, 'B'}, {16, nil}]
   end
 
@@ -92,7 +92,7 @@ describe "#renumber_ensemble" do
       add_chain builder, 'A', sequence.sub(17..19, "---")
       add_ligand builder, near: 10
     end
-    renumber_ensemble([reference, gapped], reference)
+    Resconf.renumber_ensemble([reference, gapped], reference)
     residue_ids(gapped, 'A').map(&.[0]).should eq (1..33).to_a - [18, 19, 20]
   end
 
@@ -107,7 +107,7 @@ describe "#renumber_ensemble" do
       add_ligand builder, near: 10
       add_waters builder, [vec3(38, 0, -3.5), vec3(38, 30, 30)]
     end
-    renumber_ensemble([reference, other], reference)
+    Resconf.renumber_ensemble([reference, other], reference)
     other.residues.count(&.amino_acid?).should eq sequence.size
     other['A'].residues[0]["CA"].pos.y.should eq 0
     other.residues.count(&.name.==("HOH")).should eq 1
@@ -125,7 +125,7 @@ describe "#renumber_ensemble" do
       add_chain builder, 'D', sequence, y: 0
       add_ligand builder, near: 10, y: 1
     end
-    renumber_ensemble([reference, swapped], reference)
+    Resconf.renumber_ensemble([reference, swapped], reference)
     swapped['A'].residues[0]["CA"].pos.y.should eq 0
     swapped['B'].residues[0]["CA"].pos.y.should eq 2
   end
@@ -145,7 +145,7 @@ describe "#renumber_ensemble" do
     end
     structures = [reference, related, unrelated]
     Log.capture("resconf") do |logs|
-      renumber_ensemble(structures, reference)
+      Resconf.renumber_ensemble(structures, reference)
       logs.check(:warn, /Dropped 1 structures.*3UNR/m)
     end
     structures.map(&.title).should eq %w(1REF 2REL)
@@ -162,7 +162,7 @@ describe "#select_frame" do
       add_chain builder, 'A', sequence
       add_ligand builder, near: 10
     end
-    select_frame([gapped, full]).should be full
-    select_frame([full, gapped]).should be full
+    Resconf.select_frame([gapped, full]).should be full
+    Resconf.select_frame([full, gapped]).should be full
   end
 end

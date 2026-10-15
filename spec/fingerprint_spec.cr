@@ -15,11 +15,11 @@ private def make_dmat(probe : Array(Float64), size : Int32 = 7) : HClust::Distan
   end
 end
 
-private def make_assignment(labels : Array(Int32?)) : UnitAssignment
-  UnitAssignment.new([ResId.new('A', 1)], labels)
+private def make_assignment(labels : Array(Int32?)) : Resconf::UnitAssignment
+  Resconf::UnitAssignment.new([Resconf::ResId.new('A', 1)], labels)
 end
 
-describe UnitAssignment do
+describe Resconf::UnitAssignment do
   describe "#merge_rare" do
     it "merges a rare structure within the maximum distance of a target member" do
       dmat = make_dmat([3.0, 2.0, 3.5, 4.0, 4.0, 4.0])
@@ -69,15 +69,15 @@ describe UnitAssignment do
   end
 end
 
-describe StateMatrix do
+describe Resconf::StateMatrix do
   describe "#prune_redundant" do
     it "keeps the earlier column when two columns are the same partition" do
       columns = [
-        UnitAssignment.new([ResId.new('A', 1)], [0, 0, 1, nil].map(&.as(Int32?))),
-        UnitAssignment.new([ResId.new('A', 2)], [1, 1, 0, nil].map(&.as(Int32?))),
-        UnitAssignment.new([ResId.new('A', 3)], [0, 1, 0, 1].map(&.as(Int32?))),
+        Resconf::UnitAssignment.new([Resconf::ResId.new('A', 1)], [0, 0, 1, nil].map(&.as(Int32?))),
+        Resconf::UnitAssignment.new([Resconf::ResId.new('A', 2)], [1, 1, 0, nil].map(&.as(Int32?))),
+        Resconf::UnitAssignment.new([Resconf::ResId.new('A', 3)], [0, 1, 0, 1].map(&.as(Int32?))),
       ]
-      kept = StateMatrix.new(columns).prune_redundant
+      kept = Resconf::StateMatrix.new(columns).prune_redundant
       kept.column_labels.should eq ["A:1", "A:3"]
     end
   end

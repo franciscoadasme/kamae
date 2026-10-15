@@ -159,3 +159,19 @@ comes from chem.cr residue templates. The Asn/Gln amide and His ring atoms
 that crystallography cannot tell apart are paired in whichever assignment
 gives the lower RMSD, unless both residues have hydrogens (e.g., prepared
 structures), whose assignment is taken as is.
+
+## Known issues
+
+- **One ligand defines the chain site.** `--renumber` keeps the protein
+  chains within 5 Å of a single ligand: the one with the most protein
+  contacts, among ligands that touch the most common combination of
+  families. Other copies of that protein are removed. A homopentamer with
+  a ligand at every interface therefore keeps one interface, not the whole
+  oligomer.
+- **Symmetric copies are not distinguished.** Chain ids of repeated copies
+  come from one superposition of all of them onto the reference copies.
+  When a symmetry of the complex makes two pairings equally good, the
+  first pairing is kept.
+- **Some PDB elements are unreadable.** chem.cr rejects element `X` and
+  deuterium (`D`). A file that contains either fails to load; those atoms
+  have to be removed first.
