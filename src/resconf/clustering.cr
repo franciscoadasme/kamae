@@ -108,18 +108,6 @@ module Resconf
     StateMatrix.new(columns)
   end
 
-  # Titles of the structures left unassigned per column (label) by
-  # `UnitAssignment#merge_rare`. Unresolved residues are the only other source
-  # of unknown states, so these are the unknown states of fully resolved units.
-  def self.find_unassigned_outliers(structures : Array(Chem::Structure), matrix : StateMatrix) : Hash(String, Array(String))
-    matrix.each_with_object({} of String => Array(String)) do |col, outliers|
-      titles = (0...structures.size)
-        .select { |i| col[i].nil? && col.resids.all? { |rid| resolve_residue(structures[i], rid) } }
-        .map { |i| structures[i].title }
-      outliers[col.label] = titles unless titles.empty?
-    end
-  end
-
   # Merge non-facing side-chain states into one "away" bin (single-residue units).
   # Side chains facing the ligand in fewer than `quorum` holo structures count as
   # never facing. If no state faces the ligand, recluster on backbone (N, Cα, C)

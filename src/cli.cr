@@ -67,6 +67,17 @@ def report_unresolved(unresolved : Hash(Resconf::ResId, Array(String)), dropped 
   end
 end
 
+# Titles of structures left unassigned per column. A nil state is an outlier
+# only when every residue of the unit is present and complete.
+def find_unassigned_outliers(structures : Array(Chem::Structure), matrix : Resconf::StateMatrix) : Hash(String, Array(String))
+  matrix.each_with_object({} of String => Array(String)) do |col, outliers|
+    titles = (0...structures.size)
+      .select { |i| col[i].nil? && col.resids.all? { |rid| structures[i].dig?(rid).try(&.complete?) } }
+      .map { |i| structures[i].title }
+    outliers[col.label] = titles unless titles.empty?
+  end
+end
+
 def report_unassigned(unassigned : Hash(String, Array(String)), cutoff : Float64) : Nil
   Resconf::Log.warn do
     String.build do |io|
@@ -268,7 +279,7 @@ begin
 
   puts "Clustering at #{opts.cutoff} A (#{opts.rule.to_s.downcase})..."
   selection = Resconf.select_receptors(structures, opts, frame)
-  unassigned = Resconf.find_unassigned_outliers(structures, selection.matrix)
+  unassigned = find_unassigned_outliers(structures, selection.matrix)
   report_unassigned unassigned, opts.cutoff unless unassigned.empty?
   puts "Found #{selection.candidates.size} of #{opts.residues.size} site residues with multiple conformations"
   puts "Found #{selection.matrix.size} fingerprint columns with two or more distinct conformations"
