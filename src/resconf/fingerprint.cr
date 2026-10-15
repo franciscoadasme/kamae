@@ -166,6 +166,14 @@ module Resconf
       @columns.flat_map(&.resids).uniq
     end
 
+    # Per column, the fraction of known structures in each state.
+    def probabilities : Array(Array(Float64))
+      map do |col|
+        n_known = col.count_known.to_f
+        col.count_states.map { |c| c / n_known }
+      end
+    end
+
     # One Fingerprint per structure (transpose).
     def fingerprints : Array(Fingerprint)
       return [] of Fingerprint if @columns.empty?

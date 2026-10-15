@@ -120,13 +120,6 @@ module Resconf
     end
   end
 
-  private def self.compute_conf_probabilities(matrix : StateMatrix) : Array(Array(Float64))
-    matrix.map do |col|
-      n_known = col.count_known.to_f
-      col.count_states.map { |c| c / n_known }
-    end
-  end
-
   # Merge non-facing side-chain states into one "away" bin (single-residue units).
   # Side chains facing the ligand in fewer than `quorum` holo structures count as
   # never facing. If no state faces the ligand, recluster on backbone (N, Cα, C)
