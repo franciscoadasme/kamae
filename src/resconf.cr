@@ -12,7 +12,7 @@
 # 2. Build fingerprint units from the residue list. One distance per decision:
 #    - 2 Å, complete linkage: a residue state, a loop-block state, and medoid
 #      redundancy (N_ij). Keep residues with more than one conformation
-#      (GLY/PRO never). DSSP only keeps helices out of blocks; a structure
+#      (GLY/PRO never). PSIQUE only keeps helices out of blocks; a structure
 #      with no helix is still clustered. A non-helical fingerprint residue is
 #      mobile when N, Cα, and C have more than one state. Mobile residues
 #      within 5 Å of the pocket ligand that share a secondary-structure
@@ -76,7 +76,7 @@ class Options
   # Structure or FASTA sequence for `renumber_ensemble` (set while parsing).
   property renumber_ref : Chem::Structure | String | Nil = nil
   property renumber_label : String? = nil
-  # Frame for alignment and DSSP (set while parsing when a path is given).
+  # Frame for alignment and PSIQUE (set while parsing when a path is given).
   property reference : Chem::Structure? = nil
 end
 

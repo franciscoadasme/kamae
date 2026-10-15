@@ -1,11 +1,11 @@
 # Loop blocks from non-helical fingerprint residues whose backbone (N, Cα, C)
 # has more than one complete-linkage state at the clustering cutoff.
-# DSSP only keeps helices out of blocks.
+# PSIQUE only keeps helices out of blocks.
 
 # Per-residue mobility over the ensemble (used to decide loop blocks).
 record ResidueMobility,
   resid : ResId,
-  sec : String,         # DSSP one-letter secondary-structure code
+  sec : String,         # PSIQUE one-letter secondary-structure code
   mobile : Bool,        # non-helical fingerprint residue with more than one backbone state
   ligand_contact : Bool # any heavy atom within SITE_RADIUS of the pocket ligand
 
@@ -27,7 +27,7 @@ end
 # A reference with no helix is still clustered.
 def analyze_backbone_mobility(structures : Array(Chem::Structure), opts : Options, candidates : Array(ResId), frame : Chem::Structure? = nil) : MobilityAnalysis
   ref = frame || structures[0]
-  Chem::Protein::DSSP.assign(ref)
+  Chem::Protein::PSIQUE.assign(ref)
 
   fingerprint_resids = Set.new(candidates)
   mobilities = [] of ResidueMobility

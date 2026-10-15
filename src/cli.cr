@@ -61,7 +61,7 @@ OptionParser.parse(gnu_optional_args: true) do |parser|
       abort "error: #{str} is not a FASTA (.fasta, .fa, .faa) or structure file"
     end
   end
-  parser.on("--reference PATH", "Structure used as the frame for alignment and DSSP") do |str|
+  parser.on("--reference PATH", "Structure used as the frame for alignment and PSIQUE") do |str|
     if opts.renumber_ref.is_a?(Chem::Structure)
       Resconf::Log.warn { "--renumber overrides --reference=#{str}" }
     else

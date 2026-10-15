@@ -127,7 +127,7 @@ set `LOG_LEVEL=error` to silence them.
 3. **Fingerprint units.** Only site residues with more than one
    conformation are candidates (each residue clustered alone at 2 Å,
    complete linkage, before any filter; GLY and PRO are never clustered).
-   DSSP is used only to keep helices out of loop blocks. A non-helical
+   PSIQUE is used only to keep helices out of loop blocks. A non-helical
    candidate is mobile when its backbone (N, Cα, C) has more than one
    complete-linkage state at 2 Å. Mobile residues within 5 Å of the pocket
    ligand that share a secondary-structure element, or are sequence
