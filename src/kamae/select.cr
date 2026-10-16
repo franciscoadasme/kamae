@@ -11,10 +11,66 @@ module Kamae
   private NON_CLUSTERABLE = Set{"GLY", "PRO"}
 
   record Selection,
-    candidates : Array(ResId),
     matrix : StateMatrix,
     fingerprints : Array(Fingerprint),
     representatives : Array(Chem::Structure)
+
+  # Medoids of *matrix*, then pin frequent codes, drop structurally redundant
+  # medoids, and restore any per-column state that drop lost. *cutoff* is the
+  # redundancy distance. Writes nothing.
+  def self.select_medoids(
+    structures : Array(Chem::Structure),
+    matrix : StateMatrix,
+    cutoff : Float64,
+  ) : Array(Chem::Structure)
+    return [] of Chem::Structure if matrix.empty?
+    fingerprints = matrix.fingerprints
+    clustered_resids = matrix.clustered_resids
+    # 1. One site-RMSD medoid per unique complete fingerprint code.
+    pool = find_fingerprint_medoids(structures, fingerprints, clustered_resids)
+    pool_structs = pool.map { |i| structures[i] }
+    pool_fps = pool.map { |i| fingerprints[i] }
+
+    # 2. Pin medoids whose code is frequent (≥ RARE_FLOOR of the ensemble).
+    n = structures.size
+    frequent_keys = (0...n).group_by { |i| fingerprints[i].key }
+      .select { |_, idxs| idxs.size / n.to_f >= RARE_FLOOR }
+      .keys
+      .to_set
+    pinned = Set(Int32).new
+    pool.each_index do |li|
+      pinned << li if frequent_keys.includes?(pool_fps[li].key)
+    end
+
+    # 3. Drop structurally redundant medoids on the N_ij=0 graph (pinned kept).
+    local = select_nonredundant(pool_structs, clustered_resids, cutoff, pinned)
+    selected = local.map { |li| pool[li] }.to_set
+
+    # 4. Restore a medoid for any per-column state lost in step 3 (farthest
+    #    first). A state seen only in incomplete fingerprints falls back to
+    #    any structure with it.
+    unless fingerprints.empty? || fingerprints[0].empty?
+      ncols = fingerprints[0].size
+      all_states = Array.new(ncols) { Set(Int32).new }
+      fingerprints.each { |fp| ncols.times { |j| fp[j].try { |state| all_states[j] << state } } }
+
+      ncols.times do |j|
+        covered = Set(Int32).new
+        selected.each { |i| fingerprints[i][j].try { |state| covered << state } }
+        missing = all_states[j] - covered
+        missing.each do |state|
+          candidates = pool.select { |i| fingerprints[i][j] == state && !selected.includes?(i) }
+          if candidates.empty?
+            candidates = (0...n).select { |i| fingerprints[i][j] == state && !selected.includes?(i) }
+          end
+          next if candidates.empty?
+          selected << find_farthest_from_selected(candidates, selected, structures, clustered_resids)
+        end
+      end
+    end
+
+    selected.to_a.sort.map { |i| structures[i] }
+  end
 
   # Fingerprint *residues* of an already superimposed ensemble and select
   # representatives. *frame* is the secondary-structure reference. Writes nothing.
@@ -25,29 +81,37 @@ module Kamae
     cutoff : Float64,
     rule : HClust::Rule,
   ) : Selection
-    # Only site residues with more than one conformation are fingerprint
-    # candidates; the whole site still defines the pocket ligand.
-    candidates = find_variable_residues(structures, residues, cutoff, rule)
-    raise Error.new("no site residue has multiple conformations") if candidates.empty?
+    matrix = state_matrix(structures, residues, frame, cutoff, rule)
+    Selection.new(matrix, matrix.fingerprints, select_medoids(structures, matrix, cutoff))
+  end
 
-    # Group non-helical candidates whose backbone has more than one state
+  # Conformational states of an already superimposed ensemble. *frame* is the
+  # secondary-structure reference. Rows are `StateMatrix#fingerprints`.
+  # Writes nothing.
+  def self.state_matrix(
+    structures : Array(Chem::Structure),
+    residues : Array(ResId),
+    frame : Chem::Structure,
+    cutoff : Float64,
+    rule : HClust::Rule,
+  ) : StateMatrix
+    # Only site residues with more than one conformation are fingerprint
+    # units; the whole site still defines the pocket ligand.
+    varying = find_variable_residues(structures, residues, cutoff, rule)
+    raise Error.new("no site residue has multiple conformations") if varying.empty?
+
+    # Group non-helical residues whose backbone has more than one state
     # into loop blocks; drop mobile residues that never contact the ligand.
-    analysis = analyze_backbone_mobility(structures, residues, candidates, cutoff, frame)
-    units = build_fingerprint_units(candidates, analysis)
+    analysis = analyze_backbone_mobility(structures, residues, varying, cutoff, frame)
+    units = build_fingerprint_units(varying, analysis)
     raise Error.new("loop blocks removed every fingerprint residue") if units.empty?
 
     # Per unit: cluster conformations, merge rare states, and merge
     # away-facing side chains (or recluster on the backbone if none face).
     matrix = build_state_matrix(structures, residues, units, cutoff, rule)
-
-    # If two columns label the structures with the same partition, keep the earlier one.
-    matrix = matrix.prune_redundant unless matrix.empty?
     raise Error.new("identical-column prune removed every fingerprint residue") if matrix.empty?
-
-    fingerprints = matrix.fingerprints
-    # Medoids → pin frequent → drop N_ij=0-redundant → restore missing states.
-    repr = select_representatives(structures, fingerprints, matrix.clustered_resids, cutoff)
-    Selection.new(candidates, matrix, fingerprints, repr)
+    # Drop a later column that labels the structures with the same partition.
+    matrix.prune_redundant
   end
 
   # Loop blocks from non-helical fingerprint residues whose backbone (N, Cα, C)
@@ -409,62 +473,6 @@ module Kamae
     # Isolates (no remaining edges) are also kept.
     active.each { |i| selected << i }
     selected.sort!
-  end
-
-  # Representative selection (frequent-code pinning + N_ij=0 graph).
-  #
-  # Four steps: medoids → pin frequent codes → drop N_ij=0-redundant → restore
-  # any medoid needed so every per-column state remains covered.
-  private def self.select_representatives(
-    structures : Array(Chem::Structure),
-    fingerprints : Array(Fingerprint),
-    clustered_resids : Array(ResId),
-    cutoff : Float64,
-  ) : Array(Chem::Structure)
-    # 1. One site-RMSD medoid per unique complete fingerprint code.
-    pool = find_fingerprint_medoids(structures, fingerprints, clustered_resids)
-    pool_structs = pool.map { |i| structures[i] }
-    pool_fps = pool.map { |i| fingerprints[i] }
-
-    # 2. Pin medoids whose code is frequent (≥ RARE_FLOOR of the ensemble).
-    n = structures.size
-    frequent_keys = (0...n).group_by { |i| fingerprints[i].key }
-      .select { |_, idxs| idxs.size / n.to_f >= RARE_FLOOR }
-      .keys
-      .to_set
-    pinned = Set(Int32).new
-    pool.each_index do |li|
-      pinned << li if frequent_keys.includes?(pool_fps[li].key)
-    end
-
-    # 3. Drop structurally redundant medoids on the N_ij=0 graph (pinned kept).
-    local = select_nonredundant(pool_structs, clustered_resids, cutoff, pinned)
-    selected = local.map { |li| pool[li] }.to_set
-
-    # 4. Restore a medoid for any per-column state lost in step 3 (farthest
-    #    first). A state seen only in incomplete fingerprints falls back to
-    #    any structure with it.
-    unless fingerprints.empty? || fingerprints[0].empty?
-      ncols = fingerprints[0].size
-      all_states = Array.new(ncols) { Set(Int32).new }
-      fingerprints.each { |fp| ncols.times { |j| fp[j].try { |state| all_states[j] << state } } }
-
-      ncols.times do |j|
-        covered = Set(Int32).new
-        selected.each { |i| fingerprints[i][j].try { |state| covered << state } }
-        missing = all_states[j] - covered
-        missing.each do |state|
-          candidates = pool.select { |i| fingerprints[i][j] == state && !selected.includes?(i) }
-          if candidates.empty?
-            candidates = (0...n).select { |i| fingerprints[i][j] == state && !selected.includes?(i) }
-          end
-          next if candidates.empty?
-          selected << find_farthest_from_selected(candidates, selected, structures, clustered_resids)
-        end
-      end
-    end
-
-    selected.to_a.sort.map { |i| structures[i] }
   end
 
   private def self.sort_resids(resids : Array(ResId)) : Array(ResId)

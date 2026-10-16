@@ -180,17 +180,18 @@ structures), whose assignment is taken as is.
 
 ## Library
 
-`require "kamae"` loads the `Kamae` module and leaves the program root empty. The command above is `src/cli.cr`; a library caller drives the same steps and receives a `Kamae::Selection`.
+`require "kamae"` loads the `Kamae` module and leaves the program root empty. The command above is `src/cli.cr`. A library caller can stop after the fingerprints:
 
 ```crystal
 require "kamae"
 
 site = Kamae.detect_binding_site(structures)
-selection = Kamae.select_receptors(structures, site, frame, 2.0, :complete)
-selection.representatives # one structure per stance kept for docking
+matrix = Kamae.state_matrix(structures, site, frame, 2.0, :complete)
+matrix.fingerprints
+Kamae.select_medoids(structures, matrix, 2.0) # one structure per stance kept for docking
 ```
 
-`frame` is a `Chem::Structure` in the ensemble, used for secondary structure. `2.0` is the clustering cutoff in Å and `:complete` is the linkage (`:average`, `:single`, and `:weighted` are the others). Failures raise `Kamae::Error`.
+`Kamae.select_receptors` runs both steps and returns a `Kamae::Selection`. `frame` is a `Chem::Structure` in the ensemble, used for secondary structure. `2.0` is the clustering cutoff in Å and `:complete` is the linkage (`:average`, `:single`, and `:weighted` are the others). The same cutoff is the redundancy distance for `select_medoids`. Failures raise `Kamae::Error`.
 
 ## License
 
