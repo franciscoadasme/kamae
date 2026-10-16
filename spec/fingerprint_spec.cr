@@ -1,5 +1,5 @@
 require "spec"
-require "../src/resconf"
+require "../src/kamae"
 
 # Structures 0–2 form state A (medoid 0) and 3–5 state B (medoid 3); A and B
 # are 10 Å apart. Structure 6 is the probe, *probe* gives its distances to
@@ -15,11 +15,11 @@ private def make_dmat(probe : Array(Float64), size : Int32 = 7) : HClust::Distan
   end
 end
 
-private def make_assignment(labels : Array(Int32?)) : Resconf::UnitAssignment
-  Resconf::UnitAssignment.new([Resconf::ResId.new('A', 1)], labels)
+private def make_assignment(labels : Array(Int32?)) : Kamae::UnitAssignment
+  Kamae::UnitAssignment.new([Kamae::ResId.new('A', 1)], labels)
 end
 
-module Resconf
+module Kamae
 describe UnitAssignment do
   describe "#merge_rare" do
     it "merges a rare structure within the maximum distance of a target member" do

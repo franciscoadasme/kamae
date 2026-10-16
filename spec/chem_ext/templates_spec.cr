@@ -1,6 +1,6 @@
 require "spec"
 require "chem"
-require "../../src/resconf/chem_ext"
+require "../../src/kamae/chem_ext"
 
 describe "protonation templates" do
   it "types Amber/Maestro variants as protein" do

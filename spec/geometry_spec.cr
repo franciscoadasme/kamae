@@ -1,5 +1,5 @@
 require "spec"
-require "../src/resconf"
+require "../src/kamae"
 
 private def vec3(x : Number, y : Number, z : Number) : Chem::Spatial::Vec3
   Chem::Spatial::Vec3[x.to_f, y.to_f, z.to_f]
@@ -42,7 +42,7 @@ private def make_ser(*, include_oxt : Bool = false) : Chem::Residue
   make_residue "SER", atoms
 end
 
-module Resconf
+module Kamae
 describe "pair_heavy_atoms_resolving_flips" do
   it "pairs heavy atoms by name" do
     atoms, matches = pair_heavy_atoms_resolving_flips(make_gln, make_gln)

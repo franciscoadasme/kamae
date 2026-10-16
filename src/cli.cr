@@ -1,6 +1,6 @@
 require "csv"
 require "option_parser"
-require "./resconf"
+require "./kamae"
 
 Log.setup_from_env(
   default_level: :warn,
@@ -34,7 +34,7 @@ def write_csv(path : String | Path, header : Array(String), rows : Array(Array(T
   end
 end
 
-def write_binding_site(prefix : Path, resids : Array(Resconf::ResId)) : Nil
+def write_binding_site(prefix : Path, resids : Array(Kamae::ResId)) : Nil
   path = "#{prefix}_binding-site.txt"
   File.write path, resids.map(&.to_s).join(',') + "\n"
   puts "Binding site (#{resids.size} residues) dumped to #{path}"
@@ -45,15 +45,15 @@ MIN_RESOLVED_FRAC = 0.5
 
 # Site residues absent or missing a template heavy atom, with the titles of
 # those structures.
-def find_unresolved_residues(structures : Array(Chem::Structure), site : Array(Resconf::ResId)) : Hash(Resconf::ResId, Array(String))
-  site.each_with_object({} of Resconf::ResId => Array(String)) do |rid, unresolved|
+def find_unresolved_residues(structures : Array(Chem::Structure), site : Array(Kamae::ResId)) : Hash(Kamae::ResId, Array(String))
+  site.each_with_object({} of Kamae::ResId => Array(String)) do |rid, unresolved|
     titles = structures.reject { |s| s.dig?(rid).try(&.complete?) }.map(&.title)
     unresolved[rid] = titles unless titles.empty?
   end
 end
 
-def report_unresolved(unresolved : Hash(Resconf::ResId, Array(String)), dropped : Array(Resconf::ResId), n_structures : Int32) : Nil
-  Resconf::Log.warn do
+def report_unresolved(unresolved : Hash(Kamae::ResId, Array(String)), dropped : Array(Kamae::ResId), n_structures : Int32) : Nil
+  Kamae::Log.warn do
     String.build do |io|
       io << "Ignored incomplete or missing site residues in some structures:\n"
       unresolved.each do |rid, titles|
@@ -69,7 +69,7 @@ end
 
 # Titles of structures left unassigned per column. A nil state is an outlier
 # only when every residue of the unit is present and complete.
-def find_unassigned_outliers(structures : Array(Chem::Structure), matrix : Resconf::StateMatrix) : Hash(String, Array(String))
+def find_unassigned_outliers(structures : Array(Chem::Structure), matrix : Kamae::StateMatrix) : Hash(String, Array(String))
   matrix.each_with_object({} of String => Array(String)) do |col, outliers|
     titles = (0...structures.size)
       .select { |i| col[i].nil? && col.resids.all? { |rid| structures[i].dig?(rid).try(&.complete?) } }
@@ -79,7 +79,7 @@ def find_unassigned_outliers(structures : Array(Chem::Structure), matrix : Resco
 end
 
 def report_unassigned(unassigned : Hash(String, Array(String)), cutoff : Float64) : Nil
-  Resconf::Log.warn do
+  Kamae::Log.warn do
     String.build do |io|
       io << "Left rare-state structures unassigned (farther than " << cutoff
       io << " Å from every member of the nearest kept state):"
@@ -91,7 +91,7 @@ def report_unassigned(unassigned : Hash(String, Array(String)), cutoff : Float64
   end
 end
 
-def write_fingerprints(prefix : Path, structures : Array(Chem::Structure), selection : Resconf::Selection) : Nil
+def write_fingerprints(prefix : Path, structures : Array(Chem::Structure), selection : Kamae::Selection) : Nil
   matrix = selection.matrix
   File.write "#{prefix}_reslist.csv", matrix.column_labels.join(',') + "\n"
 
@@ -162,7 +162,7 @@ def load_structures(paths : Array(Path)) : Array(Chem::Structure)
 end
 
 class Options
-  getter residues : Array(Resconf::ResId) = [] of Resconf::ResId
+  getter residues : Array(Kamae::ResId) = [] of Kamae::ResId
   property cutoff : Float64 = 2.0
   property rule : HClust::Rule = :complete
   property prealigned : Bool = false
@@ -177,7 +177,7 @@ end
 # The structure whose ligand site has the most residues, then the fewest
 # incomplete ones, the best resolution, and the first title.
 def select_frame(structures : Array(Chem::Structure)) : Chem::Structure
-  ensemble = Resconf::ProteinEnsemble.new(structures)
+  ensemble = Kamae::ProteinEnsemble.new(structures)
   index = (0...ensemble.size).select { |i| ensemble[i].site_chains }.min_by do |i|
     residues = (ensemble[i].site_chains || [] of Chem::Chain).flat_map { |chain| chain.residues.select(&.amino_acid?).to_a }
     resolution = structures[i].experiment.try(&.resolution) || Float64::MAX
@@ -198,12 +198,12 @@ begin
   opts = Options.new
   output = nil.as(Path?)
   OptionParser.parse(gnu_optional_args: true) do |parser|
-    parser.banner = "Usage: resconf -o PREFIX [options] FILE...\n       resconf -r RESIDUES --prealigned -o PREFIX FILE..."
+    parser.banner = "Usage: kamae -o PREFIX [options] FILE...\n       kamae -r RESIDUES --prealigned -o PREFIX FILE..."
     parser.on("-r LIST", "--residues LIST", "Comma-separated residues (A:64) or a .txt file (optional; auto-detect if omitted)") do |str|
       text = str.ends_with?(".txt") || File.file?(str) ? File.read(str) : str
       text.gsub('\n', ',').split(',').map do |token|
         token = token.strip
-        opts.residues << Resconf::ResId.parse(token) unless token.empty?
+        opts.residues << Kamae::ResId.parse(token) unless token.empty?
       end
     end
     parser.on("--prealigned", "Skip site alignment (structures already superimposed)") { opts.prealigned = true }
@@ -217,7 +217,7 @@ begin
         structure = read_structure(str)
         opts.renumber_ref = structure
         if opts.reference && source_key(opts.reference.not_nil!) != source_key(structure)
-          Resconf::Log.warn { "--renumber=#{str} overrides --reference" }
+          Kamae::Log.warn { "--renumber=#{str} overrides --reference" }
         end
         opts.reference = structure
       else
@@ -226,7 +226,7 @@ begin
     end
     parser.on("--reference PATH", "Structure used as the frame for alignment and PSIQUE") do |str|
       if opts.renumber_ref.is_a?(Chem::Structure)
-        Resconf::Log.warn { "--renumber overrides --reference=#{str}" }
+        Kamae::Log.warn { "--renumber overrides --reference=#{str}" }
       else
         opts.reference = read_structure(str)
       end
@@ -248,7 +248,7 @@ begin
       exit
     end
     parser.on("--version", "Show version") do
-      puts "resconf #{Resconf::VERSION}"
+      puts "kamae #{Kamae::VERSION}"
       exit
     end
     parser.invalid_option do |flag|
@@ -274,11 +274,11 @@ begin
     case ref = opts.renumber_ref
     when String
       reference = opts.reference || select_frame(structures)
-      Resconf.renumber_ensemble(structures, ref, reference)
+      Kamae.renumber_ensemble(structures, ref, reference)
       label ||= reference.title
     else
       numbering = ref || select_frame(structures)
-      Resconf.renumber_ensemble(structures, numbering)
+      Kamae.renumber_ensemble(structures, numbering)
       label ||= numbering.title
     end
     puts "Renumbered #{structures.size} structures after #{label}"
@@ -288,7 +288,7 @@ begin
   end
 
   if opts.residues.empty?
-    opts.residues.concat Resconf.detect_binding_site(structures)
+    opts.residues.concat Kamae.detect_binding_site(structures)
     puts "Detected binding site (#{opts.residues.size} residues)"
   end
 
@@ -306,12 +306,12 @@ begin
   frame = opts.reference || select_frame(structures)
 
   unless opts.prealigned
-    Resconf.align_on_site(structures, opts.residues, frame)
+    Kamae.align_on_site(structures, opts.residues, frame)
     puts "Superimposed ensemble on the site CA atoms"
   end
 
   puts "Clustering at #{opts.cutoff} A (#{opts.rule.to_s.downcase})..."
-  selection = Resconf.select_receptors(structures, opts.residues, frame, opts.cutoff, opts.rule)
+  selection = Kamae.select_receptors(structures, opts.residues, frame, opts.cutoff, opts.rule)
   unassigned = find_unassigned_outliers(structures, selection.matrix)
   report_unassigned unassigned, opts.cutoff unless unassigned.empty?
   puts "Found #{selection.candidates.size} of #{opts.residues.size} site residues with multiple conformations"
@@ -319,6 +319,6 @@ begin
   write_fingerprints prefix, structures, selection
   puts "Unique fingerprints: #{selection.fingerprints.uniq.size}"
   write_representatives prefix, selection.representatives
-rescue ex : Resconf::Error
+rescue ex : Kamae::Error
   abort "error: #{ex.message}"
 end

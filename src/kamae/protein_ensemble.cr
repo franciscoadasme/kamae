@@ -1,4 +1,4 @@
-module Resconf
+module Kamae
   # Protein chains of an ensemble, grouped into families, and the chains at
   # the ligand site used for renumbering and frame selection.
   #

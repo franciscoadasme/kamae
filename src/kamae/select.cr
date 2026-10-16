@@ -1,4 +1,4 @@
-module Resconf
+module Kamae
   # Per-unit clustering into a StateMatrix, then representative selection.
   #
   # Residue states, loop-block states, and N_ij use complete linkage at
@@ -285,7 +285,7 @@ module Resconf
       HClust.linkage(dmat, rule).labels(cutoff).uniq.size > 1
     end
     unless largest.empty?
-      Resconf::Log.warn do
+      Kamae::Log.warn do
         residues = largest.join(", ") { |rid, rmsd| "#{rid} (#{rmsd.round(1)} Å)" }
         "Site residues deviating more than #{LARGE_RMSD} Å between structures: #{residues}; check the alignment and numbering"
       end

@@ -1,4 +1,4 @@
-module Resconf
+module Kamae
   record ResId, chain : Char, number : Int32, insertion_code : Char? = nil do
     def self.parse(token : String) : self
       parts = token.split(':', limit: 2)
@@ -19,17 +19,17 @@ module Resconf
 end
 
 class Chem::Structure
-  def dig(resid : Resconf::ResId) : Residue
+  def dig(resid : Kamae::ResId) : Residue
     dig?(resid) || raise KeyError.new("residue #{resid} not found in #{title}")
   end
 
-  def dig?(resid : Resconf::ResId) : Residue?
+  def dig?(resid : Kamae::ResId) : Residue?
     dig?(resid.chain, resid.number, resid.insertion_code)
   end
 end
 
 class Chem::Residue
-  def id : Resconf::ResId
-    Resconf::ResId.new(chain.id, number, insertion_code)
+  def id : Kamae::ResId
+    Kamae::ResId.new(chain.id, number, insertion_code)
   end
 end

@@ -1,4 +1,6 @@
-# resconf
+# kamae
+
+*構え, the stance a body holds — the binding-site postures that stand in for the ensemble.*
 
 Select representative protein structures from a crystal (or MD) ensemble
 for ensemble docking. Per-residue heavy-atom conformations at the binding
@@ -14,15 +16,15 @@ shards install
 shards build --release
 ```
 
-The executable is `bin/resconf`. `--renumber` also needs
+The executable is `bin/kamae`. `--renumber` also needs
 [MAFFT](https://mafft.cbrc.jp/alignment/software/) on the `PATH` (e.g.,
 `apt install mafft`).
 
 ## Usage
 
 ```text
-resconf -o PREFIX [options] FILE...
-resconf -r RESIDUES --prealigned -o PREFIX FILE...
+kamae -o PREFIX [options] FILE...
+kamae -r RESIDUES --prealigned -o PREFIX FILE...
 ```
 
 `FILE` is any structure file readable by chem.cr (PDB, Maestro, …), a
@@ -42,16 +44,16 @@ Examples:
 
 ```sh
 # detect the site, align, and select representatives
-resconf -o out/target structures/*.pdb
+kamae -o out/target structures/*.pdb
 
 # raw PDBs with inconsistent chains or numbering, numbered after UniProt
-resconf --renumber=P00918.fasta -o out/target pdbs/
+kamae --renumber=P00918.fasta -o out/target pdbs/
 
 # number after UniProt, align after a prepared structure
-resconf --renumber=P00918.fasta --reference=prepared.pdb -o out/target pdbs/
+kamae --renumber=P00918.fasta --reference=prepared.pdb -o out/target pdbs/
 
 # explicit site on an ensemble that is already superimposed
-resconf -r site.txt --prealigned -o out/target ensemble.maegz
+kamae -r site.txt --prealigned -o out/target ensemble.maegz
 ```
 
 Warnings (e.g., ignored incomplete residues, structures left unassigned
@@ -175,3 +177,21 @@ structures), whose assignment is taken as is.
 - **Some PDB elements are unreadable.** chem.cr rejects element `X` and
   deuterium (`D`). A file that contains either fails to load; those atoms
   have to be removed first.
+
+## Library
+
+`require "kamae"` loads the `Kamae` module and leaves the program root empty. The command above is `src/cli.cr`; a library caller drives the same steps and receives a `Kamae::Selection`.
+
+```crystal
+require "kamae"
+
+site = Kamae.detect_binding_site(structures)
+selection = Kamae.select_receptors(structures, site, frame, 2.0, :complete)
+selection.representatives # one structure per stance kept for docking
+```
+
+`frame` is a `Chem::Structure` in the ensemble, used for secondary structure. `2.0` is the clustering cutoff in Å and `:complete` is the linkage (`:average`, `:single`, and `:weighted` are the others). Failures raise `Kamae::Error`.
+
+## License
+
+[MIT](LICENSE).

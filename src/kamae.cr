@@ -1,4 +1,4 @@
-# resconf — residue-configuration fingerprints for ensemble docking
+# kamae — residue-configuration fingerprints for ensemble docking
 #
 # Selects a small set of representative holo structures from a crystal (or MD)
 # ensemble. Algorithm:
@@ -46,23 +46,23 @@
 # Residues missing a template heavy atom (or absent) are ignored in that
 # structure by every step (unknown state).
 #
-# Library entry point (`require "resconf"`). Everything callable lives on
-# `Resconf`; the command-line tool is src/cli.cr. Failures raise
-# `Resconf::Error` instead of exiting the process.
+# Library entry point (`require "kamae"`). Everything callable lives on
+# `Kamae`; the command-line tool is src/cli.cr. Failures raise
+# `Kamae::Error` instead of exiting the process.
 #
-# Layout (src/resconf/):
+# Layout (src/kamae/):
 #   chem_ext, hclust_ext, resid, geometry, ligand, protein_ensemble, site, renumber,
 #   fingerprint, select
 
 require "chem"
 require "hclust"
 
-require "./resconf/chem_ext"
-require "./resconf/hclust_ext"
-require "./resconf/resid"
+require "./kamae/chem_ext"
+require "./kamae/hclust_ext"
+require "./kamae/resid"
 
-module Resconf
-  Log = ::Log.for("resconf")
+module Kamae
+  Log = ::Log.for("kamae")
 
   # shard.yml is the only copy of the version (`shards version` at compile time).
   VERSION = {{ `shards version "#{__DIR__}/.."`.chomp.stringify }}
@@ -72,10 +72,10 @@ module Resconf
   end
 end
 
-require "./resconf/fingerprint"
-require "./resconf/geometry"
-require "./resconf/ligand"
-require "./resconf/protein_ensemble"
-require "./resconf/renumber"
-require "./resconf/select"
-require "./resconf/site"
+require "./kamae/fingerprint"
+require "./kamae/geometry"
+require "./kamae/ligand"
+require "./kamae/protein_ensemble"
+require "./kamae/renumber"
+require "./kamae/select"
+require "./kamae/site"

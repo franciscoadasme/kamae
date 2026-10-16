@@ -1,5 +1,5 @@
 require "spec"
-require "../src/resconf"
+require "../src/kamae"
 
 describe HClust::DistanceMatrix do
   describe "#max" do

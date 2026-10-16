@@ -1,6 +1,6 @@
 require "./ligand"
 
-module Resconf
+module Kamae
   # Residue binding site of an ensemble.
   #
   # Per structure, each ligand molecule yields the protein residues within
@@ -60,7 +60,7 @@ module Resconf
     site, dropped = split_equivalent(structures, candidates)
     raise Error.new("no site residues of the same type in all structures") if site.empty?
     unless dropped.empty?
-      Resconf::Log.warn { "Dropped site residues of a different type in some structures: #{dropped.join(',')}" }
+      Kamae::Log.warn { "Dropped site residues of a different type in some structures: #{dropped.join(',')}" }
     end
     site.sort_by! { |r| {r.chain.ord, r.number, (r.insertion_code || ' ').ord} }
   end

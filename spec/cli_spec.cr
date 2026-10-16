@@ -2,7 +2,7 @@ require "spec"
 require "chem"
 require "file_utils"
 
-BIN = File.join(Dir.tempdir, "resconf-cli-spec")
+BIN = File.join(Dir.tempdir, "kamae-cli-spec")
 CLI = File.expand_path("../src/cli.cr", __DIR__)
 
 unless File.file?(BIN) && File.info(BIN).modification_time >= File.info(CLI).modification_time
@@ -48,9 +48,9 @@ private def run_cli(args : Array(String)) : {Process::Status, String, String}
   {status, stdout.to_s, stderr.to_s}
 end
 
-describe "resconf" do
+describe "kamae" do
   it "numbers a sequence after the structure with the larger site" do
-    dir = File.tempname("resconf-cli")
+    dir = File.tempname("kamae-cli")
     Dir.mkdir(dir)
     begin
       write_alanine(File.join(dir, "a.pdb"), "LESS", 22, chain: 'B')
@@ -79,7 +79,7 @@ describe "resconf" do
   end
 
   it "writes fingerprints and representatives for an explicit site" do
-    dir = File.tempname("resconf-cli")
+    dir = File.tempname("kamae-cli")
     Dir.mkdir(dir)
     begin
       write_alanine(File.join(dir, "a.pdb"), "ONE", 22)
@@ -95,7 +95,7 @@ describe "resconf" do
         File.join(dir, "b.pdb"),
         File.join(dir, "c.pdb"),
       ])
-      fail "resconf exited #{status.exit_code}\n#{stdout}\n#{stderr}" unless status.success?
+      fail "kamae exited #{status.exit_code}\n#{stdout}\n#{stderr}" unless status.success?
 
       stdout.should contain("Loaded 3 structures")
       File.read("#{prefix}_conf.csv").should eq "receptor,A:9\nONE,0\nTWO,0\nTHREE,1\n"

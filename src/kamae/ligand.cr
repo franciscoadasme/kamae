@@ -1,4 +1,4 @@
-module Resconf
+module Kamae
   private LIGAND_CACHE = {} of UInt64 => Array(Chem::AtomView)
 
   # Ligand molecules of *structure*, computed once per structure object.

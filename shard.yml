@@ -1,5 +1,6 @@
-name: resconf
+name: kamae
 version: 0.3.0
+description: Protein ensemble reduction based on residue-wise fingerprints
 
 authors:
   - Francisco Adasme <francisco.adasme@gmail.com>
@@ -12,7 +13,7 @@ dependencies:
     github: franciscoadasme/hclust
 
 targets:
-  resconf:
+  kamae:
     main: src/cli.cr
 
 crystal: ">= 1.15.1"

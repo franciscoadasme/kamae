@@ -1,4 +1,4 @@
-module Resconf
+module Kamae
   BACKBONE_NAMES = {"N", "CA", "C", "O"}
   private FIT_BB_NAMES   = {"N", "CA", "C"}
 

@@ -1,4 +1,4 @@
-module Resconf
+module Kamae
   # UnitAssignment — one fingerprint unit/column across the ensemble:
   #   resids = residues in the unit; labels[i] = state of structures[i], or
   #   nil if any unit residue is unresolved in it or it is a rare-state

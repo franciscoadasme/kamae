@@ -1,6 +1,6 @@
 require "./protein_ensemble"
 
-module Resconf
+module Kamae
   # Consistent chain ids and residue numbering across an ensemble (opt-in).
   #
   # See `ProteinEnsemble.new` for how the ligand site is chosen. Each family is aligned
@@ -378,7 +378,7 @@ module Resconf
     structures.replace kept
     raise Error.new("no structures left after renumbering") if kept.empty?
     return if dropped.empty?
-    Resconf::Log.warn do
+    Kamae::Log.warn do
       String.build do |io|
         io << "Dropped " << dropped.size << " structures while renumbering:"
         dropped.each { |title, reason| io << "\n  " << title << ": " << reason }

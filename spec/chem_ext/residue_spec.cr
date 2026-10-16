@@ -1,6 +1,6 @@
 require "spec"
 require "chem"
-require "../../src/resconf/chem_ext"
+require "../../src/kamae/chem_ext"
 
 private def build_residue(name : String, atom_names : Array(String)) : Chem::Residue
   structure = Chem::Structure.build do |b|
