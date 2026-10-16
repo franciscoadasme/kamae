@@ -191,7 +191,7 @@ matrix.fingerprints
 Kamae.select_medoids(structures, matrix, 2.0) # one structure per stance kept for docking
 ```
 
-`Kamae.select_receptors` runs both steps and returns a `Kamae::Selection`. `frame` is a `Chem::Structure` in the ensemble, used for secondary structure. `2.0` is the clustering cutoff in Å and `:complete` is the linkage (`:average`, `:single`, and `:weighted` are the others). The same cutoff is the redundancy distance for `select_medoids`. Failures raise `Kamae::Error`.
+`Kamae.select_receptors` runs both steps and returns the structures. `frame` is a `Chem::Structure` in the ensemble, used for secondary structure. `2.0` is the clustering cutoff in Å and `:complete` is the linkage (`:average`, `:single`, and `:weighted` are the others). The same cutoff is the redundancy distance for `select_medoids`. Failures raise `Kamae::Error`.
 
 ## License
 

@@ -10,11 +10,6 @@ module Kamae
 
   private NON_CLUSTERABLE = Set{"GLY", "PRO"}
 
-  record Selection,
-    matrix : StateMatrix,
-    fingerprints : Array(Fingerprint),
-    representatives : Array(Chem::Structure)
-
   # Medoids of *matrix*, then pin frequent codes, drop structurally redundant
   # medoids, and restore any per-column state that drop lost. *cutoff* is the
   # redundancy distance. Writes nothing.
@@ -80,9 +75,8 @@ module Kamae
     frame : Chem::Structure,
     cutoff : Float64,
     rule : HClust::Rule,
-  ) : Selection
-    matrix = state_matrix(structures, residues, frame, cutoff, rule)
-    Selection.new(matrix, matrix.fingerprints, select_medoids(structures, matrix, cutoff))
+  ) : Array(Chem::Structure)
+    select_medoids(structures, state_matrix(structures, residues, frame, cutoff, rule), cutoff)
   end
 
   # Conformational states of an already superimposed ensemble. *frame* is the

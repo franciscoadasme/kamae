@@ -91,12 +91,11 @@ def report_unassigned(unassigned : Hash(String, Array(String)), cutoff : Float64
   end
 end
 
-def write_fingerprints(prefix : Path, structures : Array(Chem::Structure), selection : Kamae::Selection) : Nil
-  matrix = selection.matrix
+def write_fingerprints(prefix : Path, structures : Array(Chem::Structure), matrix : Kamae::StateMatrix) : Nil
   File.write "#{prefix}_reslist.csv", matrix.column_labels.join(',') + "\n"
 
   header = ["receptor"] + matrix.column_labels
-  table = structures.map(&.title).zip(selection.fingerprints).map do |title, fp|
+  table = structures.map(&.title).zip(matrix.fingerprints).map do |title, fp|
     [title] + fp.map { |state| state.try(&.to_s) || "?" }
   end
   write_csv "#{prefix}_conf.csv", header, table
@@ -311,13 +310,13 @@ begin
   end
 
   puts "Clustering at #{opts.cutoff} A (#{opts.rule.to_s.downcase})..."
-  selection = Kamae.select_receptors(structures, opts.residues, frame, opts.cutoff, opts.rule)
-  unassigned = find_unassigned_outliers(structures, selection.matrix)
+  matrix = Kamae.state_matrix(structures, opts.residues, frame, opts.cutoff, opts.rule)
+  unassigned = find_unassigned_outliers(structures, matrix)
   report_unassigned unassigned, opts.cutoff unless unassigned.empty?
-  puts "Found #{selection.matrix.size} fingerprint columns with two or more distinct conformations"
-  write_fingerprints prefix, structures, selection
-  puts "Unique fingerprints: #{selection.fingerprints.uniq.size}"
-  write_representatives prefix, selection.representatives
+  puts "Found #{matrix.size} fingerprint columns with two or more distinct conformations"
+  write_fingerprints prefix, structures, matrix
+  puts "Unique fingerprints: #{matrix.fingerprints.uniq.size}"
+  write_representatives prefix, Kamae.select_medoids(structures, matrix, opts.cutoff)
 rescue ex : Kamae::Error
   abort "error: #{ex.message}"
 end
