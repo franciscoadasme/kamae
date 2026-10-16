@@ -307,6 +307,9 @@ begin
   unless opts.prealigned
     Kamae.align_on_site(structures, opts.residues, frame)
     puts "Superimposed ensemble on the site CA atoms"
+    path = "#{prefix}_aligned.maegz"
+    structures.to_maestro path
+    puts "Aligned structures dumped to #{path}"
   end
 
   puts "Clustering at #{opts.cutoff} A (#{opts.rule.to_s.downcase})..."

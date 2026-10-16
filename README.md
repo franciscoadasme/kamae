@@ -69,8 +69,8 @@ set `LOG_LEVEL=error` to silence them.
 - `{prefix}_reslist.csv` — fingerprint columns
 - `{prefix}_repr.txt` — IDs of the representative structures
 - `{prefix}_repr.maegz` — the representative structures
-- `{prefix}_renumbered.maegz` — the renumbered, aligned ensemble
-  (`--renumber`)
+- `{prefix}_renumbered.maegz` — the renumbered ensemble (`--renumber`), before alignment
+- `{prefix}_aligned.maegz` — the ensemble after site superposition (unless `--prealigned`)
 
 ## Protocol
 
