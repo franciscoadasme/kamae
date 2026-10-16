@@ -1,22 +1,19 @@
 module Kamae
   # Per-unit clustering into a StateMatrix, then representative selection.
   #
-  # Residue states, loop-block states, and N_ij use complete linkage at
-  # the clustering cutoff (2 Å). Rare-state membership is single linkage at that
-  # same cutoff. Facing uses `SITE_RADIUS` and
-  # `quorum`, the same max(3, 1%) rule as site membership.
+  # Residue states, loop-block states, and N_ij use complete linkage at 2 Å.
+  # Rare-state membership is single linkage at that same distance. Facing uses
+  # `SITE_RADIUS` and `quorum`, the same max(3, 1%) rule as site membership.
 
+  private CLUSTER_CUTOFF  =  2.0
   private LARGE_RMSD      = 20.0
-
   private NON_CLUSTERABLE = Set{"GLY", "PRO"}
 
   # Medoids of *matrix*, then pin frequent codes, drop structurally redundant
-  # medoids, and restore any per-column state that drop lost. *cutoff* is the
-  # redundancy distance. Writes nothing.
+  # medoids, and restore any per-column state that drop lost. Writes nothing.
   def self.select_medoids(
     structures : Array(Chem::Structure),
     matrix : StateMatrix,
-    cutoff : Float64,
   ) : Array(Chem::Structure)
     return [] of Chem::Structure if matrix.empty?
     fingerprints = matrix.fingerprints
@@ -38,7 +35,7 @@ module Kamae
     end
 
     # 3. Drop structurally redundant medoids on the N_ij=0 graph (pinned kept).
-    local = select_nonredundant(pool_structs, clustered_resids, cutoff, pinned)
+    local = select_nonredundant(pool_structs, clustered_resids, pinned)
     selected = local.map { |li| pool[li] }.to_set
 
     # 4. Restore a medoid for any per-column state lost in step 3 (farthest
@@ -73,10 +70,8 @@ module Kamae
     structures : Array(Chem::Structure),
     residues : Array(ResId),
     frame : Chem::Structure,
-    cutoff : Float64,
-    rule : HClust::Rule,
   ) : Array(Chem::Structure)
-    select_medoids(structures, state_matrix(structures, residues, frame, cutoff, rule), cutoff)
+    select_medoids(structures, state_matrix(structures, residues, frame))
   end
 
   # Conformational states of an already superimposed ensemble. *frame* is the
@@ -86,30 +81,28 @@ module Kamae
     structures : Array(Chem::Structure),
     residues : Array(ResId),
     frame : Chem::Structure,
-    cutoff : Float64,
-    rule : HClust::Rule,
   ) : StateMatrix
     # Only site residues with more than one conformation are fingerprint
     # units; the whole site still defines the pocket ligand.
-    varying = find_variable_residues(structures, residues, cutoff, rule)
+    varying = find_variable_residues(structures, residues)
     raise Error.new("no site residue has multiple conformations") if varying.empty?
 
     # Group non-helical residues whose backbone has more than one state
     # into loop blocks; drop mobile residues that never contact the ligand.
-    analysis = analyze_backbone_mobility(structures, residues, varying, cutoff, frame)
+    analysis = analyze_backbone_mobility(structures, residues, varying, frame)
     units = build_fingerprint_units(varying, analysis)
     raise Error.new("loop blocks removed every fingerprint residue") if units.empty?
 
     # Per unit: cluster conformations, merge rare states, and merge
     # away-facing side chains (or recluster on the backbone if none face).
-    matrix = build_state_matrix(structures, residues, units, cutoff, rule)
+    matrix = build_state_matrix(structures, residues, units)
     raise Error.new("identical-column prune removed every fingerprint residue") if matrix.empty?
     # Drop a later column that labels the structures with the same partition.
     matrix.prune_redundant
   end
 
   # Loop blocks from non-helical fingerprint residues whose backbone (N, Cα, C)
-  # has more than one complete-linkage state at the clustering cutoff.
+  # has more than one complete-linkage state at 2 Å.
   # PSIQUE only keeps helices out of blocks.
 
   # Connected group of mobile, ligand-contacting fingerprint residues.
@@ -133,9 +126,9 @@ module Kamae
     ligand_contact : Bool # any heavy atom within SITE_RADIUS of the pocket ligand
 
   # Mark non-helical fingerprint residues (*candidates*) whose backbone
-  # (N, Cα, C) forms more than one complete-linkage state at *cutoff*.
+  # (N, Cα, C) forms more than one complete-linkage state at 2 Å.
   # A reference with no helix is still clustered.
-  private def self.analyze_backbone_mobility(structures : Array(Chem::Structure), site : Array(ResId), candidates : Array(ResId), cutoff : Float64, frame : Chem::Structure) : MobilityAnalysis
+  private def self.analyze_backbone_mobility(structures : Array(Chem::Structure), site : Array(ResId), candidates : Array(ResId), frame : Chem::Structure) : MobilityAnalysis
     Chem::Protein::PSIQUE.assign(frame)
 
     fingerprint_resids = Set.new(candidates)
@@ -143,7 +136,7 @@ module Kamae
     candidates.each do |resid|
       residue = frame.dig?(resid)
       next unless residue && protein_like?(residue)
-      mobile = !residue.sec.type.helical? && backbone_state_count(structures, resid, cutoff) > 1
+      mobile = !residue.sec.type.helical? && backbone_state_count(structures, resid) > 1
       ligand_contact = mobile && contacts_ligand?(resid, structures, site, SITE_RADIUS)
       mobilities << ResidueMobility.new(
         resid: resid,
@@ -160,12 +153,12 @@ module Kamae
   end
 
   # Complete-linkage states of one residue's backbone (N, CA, C) at the
-  # clustering cutoff (2 Å by default).
-  private def self.backbone_state_count(structures : Array(Chem::Structure), resid : ResId, cutoff : Float64) : Int32
+  # clustering distance (2 Å).
+  private def self.backbone_state_count(structures : Array(Chem::Structure), resid : ResId) : Int32
     known = structures.select { |s| resolve_residue(s, resid) }
     return 1 if known.size <= 1
     dmat = HClust::DistanceMatrix.new(known) { |a, b| backbone_site_rmsd(a, b, [resid]) }
-    HClust.linkage(dmat, :complete).labels(cutoff).uniq.size
+    HClust.linkage(dmat, :complete).labels(CLUSTER_CUTOFF).uniq.size
   end
 
   # Contacting mobile loop blocks become multi-residue units; other mobile
@@ -190,23 +183,23 @@ module Kamae
     units
   end
 
-  private def self.build_state_matrix(structures : Array(Chem::Structure), site : Array(ResId), units : Array(Array(ResId)), cutoff : Float64, rule : HClust::Rule) : StateMatrix
+  private def self.build_state_matrix(structures : Array(Chem::Structure), site : Array(ResId), units : Array(Array(ResId))) : StateMatrix
     columns = [] of UnitAssignment
     units.each do |resids|
-      if assignment = cluster_unit(structures, resids, site, cutoff, rule)
+      if assignment = cluster_unit(structures, resids, site)
         columns << assignment
       end
     end
     StateMatrix.new(columns)
   end
 
-  private def self.cluster_backbone_assignment(structures : Array(Chem::Structure), resids : Array(ResId), cutoff : Float64, rule : HClust::Rule) : UnitAssignment
+  private def self.cluster_backbone_assignment(structures : Array(Chem::Structure), resids : Array(ResId)) : UnitAssignment
     dmat = HClust::DistanceMatrix.new(structures) { |a, b| backbone_site_rmsd(a, b, resids) }
-    labels = HClust.linkage(dmat, rule).labels(cutoff)
-    UnitAssignment.new(resids, labels).merge_rare(dmat, RARE_FLOOR, cutoff)
+    labels = HClust.linkage(dmat, :complete).labels(CLUSTER_CUTOFF)
+    UnitAssignment.new(resids, labels).merge_rare(dmat, RARE_FLOOR, CLUSTER_CUTOFF)
   end
 
-  private def self.cluster_resolved_unit(structures : Array(Chem::Structure), resids : Array(ResId), site : Array(ResId), cutoff : Float64, rule : HClust::Rule) : UnitAssignment?
+  private def self.cluster_resolved_unit(structures : Array(Chem::Structure), resids : Array(ResId), site : Array(ResId)) : UnitAssignment?
     if resids.size == 1
       instances = structures.map &.dig(resids[0])
       return nil if NON_CLUSTERABLE.includes?(instances[0].name) || instances.size <= 1
@@ -216,26 +209,26 @@ module Kamae
     end
 
     # Hierarchical clustering → discrete conformational states.
-    assignment = UnitAssignment.new(resids, HClust.linkage(dmat, rule).labels(cutoff))
+    assignment = UnitAssignment.new(resids, HClust.linkage(dmat, :complete).labels(CLUSTER_CUTOFF))
 
     # Merge states present in < RARE_FLOOR of the known structures. A rare
     # structure joins the kept state with the nearest medoid only when it is
-    # within the clustering cutoff of some member of that state.
-    assignment = assignment.merge_rare(dmat, RARE_FLOOR, cutoff)
+    # within the clustering distance of some member of that state.
+    assignment = assignment.merge_rare(dmat, RARE_FLOOR, CLUSTER_CUTOFF)
     return nil unless assignment.n_states > 1
 
     # Merge away-facing side-chain states; backbone-only if none face the ligand.
-    merge_ligand_away_states(assignment, structures, site, cutoff, rule)
+    merge_ligand_away_states(assignment, structures, site)
   end
 
   # Cluster one fingerprint unit across the structures where all its residues
   # are resolved; the state of the rest is unknown (nil). Returns nil if dropped.
-  private def self.cluster_unit(structures : Array(Chem::Structure), resids : Array(ResId), site : Array(ResId), cutoff : Float64, rule : HClust::Rule) : UnitAssignment?
+  private def self.cluster_unit(structures : Array(Chem::Structure), resids : Array(ResId), site : Array(ResId)) : UnitAssignment?
     known = (0...structures.size).select do |i|
       resids.all? { |rid| resolve_residue(structures[i], rid) }
     end
     return nil if known.size <= 1
-    cluster_resolved_unit(known.map { |i| structures[i] }, resids, site, cutoff, rule).try &.expand(known, structures.size)
+    cluster_resolved_unit(known.map { |i| structures[i] }, resids, site).try &.expand(known, structures.size)
   end
 
   # Group *candidates* into connected components using two rules:
@@ -284,14 +277,14 @@ module Kamae
     groups.values.map { |resids| sort_resids(resids) }
   end
 
-  # Count fingerprint residues whose in-place heavy-atom RMSD exceeds *cutoff*.
-  private def self.count_mismatches(a : Chem::Structure, b : Chem::Structure, resids : Array(ResId), cutoff : Float64) : Int32
+  # Count fingerprint residues whose in-place heavy-atom RMSD exceeds 2 Å.
+  private def self.count_mismatches(a : Chem::Structure, b : Chem::Structure, resids : Array(ResId)) : Int32
     n = 0
     resids.each do |rid|
       ra = resolve_residue(a, rid)
       rb = resolve_residue(b, rid)
       next unless ra && rb
-      n += 1 if residue_rmsd(ra, rb) > cutoff
+      n += 1 if residue_rmsd(ra, rb) > CLUSTER_CUTOFF
     end
     n
   end
@@ -332,7 +325,7 @@ module Kamae
   # than one state. GLY and PRO are never clustered. Residues deviating more
   # than LARGE_RMSD between two structures are reported, as that may also
   # come from a bad alignment or inconsistent numbering.
-  private def self.find_variable_residues(structures : Array(Chem::Structure), resids : Array(ResId), cutoff : Float64, rule : HClust::Rule) : Array(ResId)
+  private def self.find_variable_residues(structures : Array(Chem::Structure), resids : Array(ResId)) : Array(ResId)
     largest = {} of ResId => Float64
     variable = resids.select do |rid|
       instances = structures.compact_map { |s| resolve_residue(s, rid) }
@@ -340,7 +333,7 @@ module Kamae
       dmat = HClust::DistanceMatrix.new(instances) { |a, b| residue_rmsd(a, b) }
       rmsd = dmat.max
       largest[rid] = rmsd if rmsd > LARGE_RMSD
-      HClust.linkage(dmat, rule).labels(cutoff).uniq.size > 1
+      HClust.linkage(dmat, :complete).labels(CLUSTER_CUTOFF).uniq.size > 1
     end
     unless largest.empty?
       Kamae::Log.warn do
@@ -378,8 +371,6 @@ module Kamae
     assignment : UnitAssignment,
     structures : Array(Chem::Structure),
     site_resids : Array(ResId),
-    cutoff : Float64,
-    rule : HClust::Rule,
   ) : UnitAssignment?
     resids = assignment.resids
     r2 = SITE_RADIUS * SITE_RADIUS
@@ -396,7 +387,7 @@ module Kamae
     if n_face == 0
       n_bb = structures.count { |s| unit_bb_contacts_ligand?(s, resids, site_resids, r2) }
       return nil if n_bb < min_frames
-      bb = cluster_backbone_assignment(structures, resids, cutoff, rule)
+      bb = cluster_backbone_assignment(structures, resids)
       return nil unless bb.n_states > 1
       return bb
     end
@@ -425,16 +416,15 @@ module Kamae
   private def self.select_nonredundant(
     structures : Array(Chem::Structure),
     resids : Array(ResId),
-    cutoff : Float64,
     pinned : Set(Int32) = Set(Int32).new,
   ) : Array(Int32)
     n = structures.size
 
-    # Edge i—j if every fingerprint residue is within *cutoff* (N_ij = 0).
+    # Edge i—j if every fingerprint residue is within 2 Å (N_ij = 0).
     neighbors = Array.new(n) { [] of Int32 }
     (0...n).each do |i|
       ((i + 1)...n).each do |j|
-        next unless structurally_redundant?(structures[i], structures[j], resids, cutoff)
+        next unless structurally_redundant?(structures[i], structures[j], resids)
         neighbors[i] << j
         neighbors[j] << i
       end
@@ -473,8 +463,8 @@ module Kamae
     resids.sort_by { |r| {r.chain.ord, r.number, (r.insertion_code || ' ').ord} }
   end
 
-  private def self.structurally_redundant?(a : Chem::Structure, b : Chem::Structure, resids : Array(ResId), cutoff : Float64) : Bool
-    count_mismatches(a, b, resids, cutoff) == 0
+  private def self.structurally_redundant?(a : Chem::Structure, b : Chem::Structure, resids : Array(ResId)) : Bool
+    count_mismatches(a, b, resids) == 0
   end
 
   private def self.union_find_merge(parent : Hash(ResId, ResId), a : ResId, b : ResId) : Nil

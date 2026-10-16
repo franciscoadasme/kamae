@@ -78,10 +78,10 @@ def find_unassigned_outliers(structures : Array(Chem::Structure), matrix : Kamae
   end
 end
 
-def report_unassigned(unassigned : Hash(String, Array(String)), cutoff : Float64) : Nil
+def report_unassigned(unassigned : Hash(String, Array(String))) : Nil
   Kamae::Log.warn do
     String.build do |io|
-      io << "Left rare-state structures unassigned (farther than " << cutoff
+      io << "Left rare-state structures unassigned (farther than 2"
       io << " Å from every member of the nearest kept state):"
       unassigned.each do |label, titles|
         io << "\n  " << label << " in " << titles.first(5).join(' ')
@@ -162,8 +162,6 @@ end
 
 class Options
   getter residues : Array(Kamae::ResId) = [] of Kamae::ResId
-  property cutoff : Float64 = 2.0
-  property rule : HClust::Rule = :complete
   property prealigned : Bool = false
   property renumber : Bool = false
   # Structure or FASTA sequence for renumbering (set while parsing).
@@ -228,17 +226,6 @@ begin
         Kamae::Log.warn { "--renumber overrides --reference=#{str}" }
       else
         opts.reference = read_structure(str)
-      end
-    end
-    parser.on("-d NUMBER", "--cutoff NUMBER", "Clustering height in A (default #{opts.cutoff})") do |str|
-      opts.cutoff = str.to_f? || abort "error: invalid cutoff: #{str}"
-      abort "error: cutoff must be positive" if opts.cutoff <= 0
-    end
-    parser.on("--linkage RULE", "complete, average, single, or weighted (default #{opts.rule.to_s.downcase})") do |str|
-      begin
-        opts.rule = HClust::Rule.parse(str)
-      rescue
-        abort "error: unknown linkage #{str} (use complete, average, single, or weighted)"
       end
     end
     parser.on("-o PREFIX", "--output PREFIX", "Output path prefix (no extension)") { |str| output = Path[str] }
@@ -312,14 +299,14 @@ begin
     puts "Aligned structures dumped to #{path}"
   end
 
-  puts "Clustering at #{opts.cutoff} A (#{opts.rule.to_s.downcase})..."
-  matrix = Kamae.state_matrix(structures, opts.residues, frame, opts.cutoff, opts.rule)
+  puts "Clustering..."
+  matrix = Kamae.state_matrix(structures, opts.residues, frame)
   unassigned = find_unassigned_outliers(structures, matrix)
-  report_unassigned unassigned, opts.cutoff unless unassigned.empty?
+  report_unassigned unassigned unless unassigned.empty?
   puts "Found #{matrix.size} fingerprint columns with two or more distinct conformations"
   write_fingerprints prefix, structures, matrix
   puts "Unique fingerprints: #{matrix.fingerprints.uniq.size}"
-  write_representatives prefix, Kamae.select_medoids(structures, matrix, opts.cutoff)
+  write_representatives prefix, Kamae.select_medoids(structures, matrix)
 rescue ex : Kamae::Error
   abort "error: #{ex.message}"
 end
