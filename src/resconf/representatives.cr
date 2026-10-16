@@ -7,7 +7,7 @@ module Resconf
     structures : Array(Chem::Structure),
     fingerprints : Array(Fingerprint),
     clustered_resids : Array(ResId),
-    opts : Options,
+    cutoff : Float64,
   ) : Array(Chem::Structure)
     # 1. One site-RMSD medoid per unique complete fingerprint code.
     pool = find_fingerprint_medoids(structures, fingerprints, clustered_resids)
@@ -26,7 +26,7 @@ module Resconf
     end
 
     # 3. Drop structurally redundant medoids on the N_ij=0 graph (pinned kept).
-    local = select_nonredundant(pool_structs, clustered_resids, opts.cutoff, pinned)
+    local = select_nonredundant(pool_structs, clustered_resids, cutoff, pinned)
     selected = local.map { |li| pool[li] }.to_set
 
     # 4. Restore a medoid for any per-column state lost in step 3 (farthest

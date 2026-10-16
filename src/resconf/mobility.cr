@@ -24,19 +24,18 @@ module Resconf
   end
 
   # Mark non-helical fingerprint residues (*candidates*) whose backbone
-  # (N, Cα, C) forms more than one complete-linkage state at *opts.cutoff*.
+  # (N, Cα, C) forms more than one complete-linkage state at *cutoff*.
   # A reference with no helix is still clustered.
-  private def self.analyze_backbone_mobility(structures : Array(Chem::Structure), opts : Options, candidates : Array(ResId), frame : Chem::Structure? = nil) : MobilityAnalysis
-    ref = frame || structures[0]
-    Chem::Protein::PSIQUE.assign(ref)
+  private def self.analyze_backbone_mobility(structures : Array(Chem::Structure), site : Array(ResId), candidates : Array(ResId), cutoff : Float64, frame : Chem::Structure) : MobilityAnalysis
+    Chem::Protein::PSIQUE.assign(frame)
 
     fingerprint_resids = Set.new(candidates)
     mobilities = [] of ResidueMobility
     candidates.each do |resid|
-      residue = ref.dig?(resid)
+      residue = frame.dig?(resid)
       next unless residue && protein_like?(residue)
-      mobile = !residue.sec.type.helical? && backbone_state_count(structures, resid, opts) > 1
-      ligand_contact = mobile && contacts_ligand?(resid, structures, opts.residues, SITE_RADIUS)
+      mobile = !residue.sec.type.helical? && backbone_state_count(structures, resid, cutoff) > 1
+      ligand_contact = mobile && contacts_ligand?(resid, structures, site, SITE_RADIUS)
       mobilities << ResidueMobility.new(
         resid: resid,
         sec: residue.sec.type.code.to_s,
@@ -47,7 +46,7 @@ module Resconf
 
     MobilityAnalysis.new(
       residues: mobilities,
-      loop_blocks: group_mobile_into_loop_blocks(mobilities, ref, fingerprint_resids),
+      loop_blocks: group_mobile_into_loop_blocks(mobilities, frame, fingerprint_resids),
     )
   end
 
@@ -75,11 +74,11 @@ module Resconf
 
   # Complete-linkage states of one residue's backbone (N, CA, C) at the
   # clustering cutoff (2 Å by default).
-  private def self.backbone_state_count(structures : Array(Chem::Structure), resid : ResId, opts : Options) : Int32
+  private def self.backbone_state_count(structures : Array(Chem::Structure), resid : ResId, cutoff : Float64) : Int32
     known = structures.select { |s| resolve_residue(s, resid) }
     return 1 if known.size <= 1
     dmat = HClust::DistanceMatrix.new(known) { |a, b| backbone_site_rmsd(a, b, [resid]) }
-    HClust.linkage(dmat, :complete).labels(opts.cutoff).uniq.size
+    HClust.linkage(dmat, :complete).labels(cutoff).uniq.size
   end
 
   private def self.protein_like?(residue : Chem::Residue) : Bool

@@ -2,7 +2,7 @@ module Resconf
   # Per-unit clustering → StateMatrix.
   #
   # Residue states, loop-block states, and N_ij use complete linkage at
-  # `Options#cutoff` (2 Å). Rare-state membership is single linkage at that
+  # the clustering cutoff (2 Å). Rare-state membership is single linkage at that
   # same cutoff. Facing uses `SITE_RADIUS` and
   # `quorum`, the same max(3, 1%) rule as site membership.
 
@@ -15,23 +15,29 @@ module Resconf
     fingerprints : Array(Fingerprint),
     representatives : Array(Chem::Structure)
 
-  # Fingerprint the site residues (`opts.residues`) of an already superimposed
-  # ensemble and select representatives. Writes nothing.
-  def self.select_receptors(structures : Array(Chem::Structure), opts : Options, frame : Chem::Structure? = nil) : Selection
+  # Fingerprint *residues* of an already superimposed ensemble and select
+  # representatives. *frame* is the secondary-structure reference. Writes nothing.
+  def self.select_receptors(
+    structures : Array(Chem::Structure),
+    residues : Array(ResId),
+    frame : Chem::Structure,
+    cutoff : Float64,
+    rule : HClust::Rule,
+  ) : Selection
     # Only site residues with more than one conformation are fingerprint
     # candidates; the whole site still defines the pocket ligand.
-    candidates = find_variable_residues(structures, opts.residues, opts)
+    candidates = find_variable_residues(structures, residues, cutoff, rule)
     raise Error.new("no site residue has multiple conformations") if candidates.empty?
 
     # Group non-helical candidates whose backbone has more than one state
     # into loop blocks; drop mobile residues that never contact the ligand.
-    analysis = analyze_backbone_mobility(structures, opts, candidates, frame)
+    analysis = analyze_backbone_mobility(structures, residues, candidates, cutoff, frame)
     units = build_fingerprint_units(candidates, analysis)
     raise Error.new("loop blocks removed every fingerprint residue") if units.empty?
 
     # Per unit: cluster conformations, merge rare states, and merge
     # away-facing side chains (or recluster on the backbone if none face).
-    matrix = build_state_matrix(structures, opts, units)
+    matrix = build_state_matrix(structures, residues, units, cutoff, rule)
 
     # If two columns label the structures with the same partition, keep the earlier one.
     matrix = matrix.prune_redundant unless matrix.empty?
@@ -39,7 +45,7 @@ module Resconf
 
     fingerprints = matrix.fingerprints
     # Medoids → pin frequent → drop N_ij=0-redundant → restore missing states.
-    repr = select_representatives(structures, fingerprints, matrix.clustered_resids, opts)
+    repr = select_representatives(structures, fingerprints, matrix.clustered_resids, cutoff)
     Selection.new(candidates, matrix, fingerprints, repr)
   end
 
@@ -47,7 +53,7 @@ module Resconf
   # than one state. GLY and PRO are never clustered. Residues deviating more
   # than LARGE_RMSD between two structures are reported, as that may also
   # come from a bad alignment or inconsistent numbering.
-  private def self.find_variable_residues(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : Array(ResId)
+  private def self.find_variable_residues(structures : Array(Chem::Structure), resids : Array(ResId), cutoff : Float64, rule : HClust::Rule) : Array(ResId)
     largest = {} of ResId => Float64
     variable = resids.select do |rid|
       instances = structures.compact_map { |s| resolve_residue(s, rid) }
@@ -55,7 +61,7 @@ module Resconf
       dmat = HClust::DistanceMatrix.new(instances) { |a, b| residue_rmsd(a, b) }
       rmsd = dmat.max
       largest[rid] = rmsd if rmsd > LARGE_RMSD
-      HClust.linkage(dmat, opts.rule).labels(opts.cutoff).uniq.size > 1
+      HClust.linkage(dmat, rule).labels(cutoff).uniq.size > 1
     end
     unless largest.empty?
       Resconf::Log.warn do
@@ -68,15 +74,15 @@ module Resconf
 
   # Cluster one fingerprint unit across the structures where all its residues
   # are resolved; the state of the rest is unknown (nil). Returns nil if dropped.
-  private def self.cluster_unit(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : UnitAssignment?
+  private def self.cluster_unit(structures : Array(Chem::Structure), resids : Array(ResId), site : Array(ResId), cutoff : Float64, rule : HClust::Rule) : UnitAssignment?
     known = (0...structures.size).select do |i|
       resids.all? { |rid| resolve_residue(structures[i], rid) }
     end
     return nil if known.size <= 1
-    cluster_resolved_unit(known.map { |i| structures[i] }, resids, opts).try &.expand(known, structures.size)
+    cluster_resolved_unit(known.map { |i| structures[i] }, resids, site, cutoff, rule).try &.expand(known, structures.size)
   end
 
-  private def self.cluster_resolved_unit(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : UnitAssignment?
+  private def self.cluster_resolved_unit(structures : Array(Chem::Structure), resids : Array(ResId), site : Array(ResId), cutoff : Float64, rule : HClust::Rule) : UnitAssignment?
     if resids.size == 1
       instances = structures.map &.dig(resids[0])
       return nil if NON_CLUSTERABLE.includes?(instances[0].name) || instances.size <= 1
@@ -86,22 +92,22 @@ module Resconf
     end
 
     # Hierarchical clustering → discrete conformational states.
-    assignment = UnitAssignment.new(resids, HClust.linkage(dmat, opts.rule).labels(opts.cutoff))
+    assignment = UnitAssignment.new(resids, HClust.linkage(dmat, rule).labels(cutoff))
 
     # Merge states present in < RARE_FLOOR of the known structures. A rare
     # structure joins the kept state with the nearest medoid only when it is
     # within the clustering cutoff of some member of that state.
-    assignment = assignment.merge_rare(dmat, RARE_FLOOR, opts.cutoff)
+    assignment = assignment.merge_rare(dmat, RARE_FLOOR, cutoff)
     return nil unless assignment.n_states > 1
 
     # Merge away-facing side-chain states; backbone-only if none face the ligand.
-    merge_ligand_away_states(assignment, structures, opts.residues, opts)
+    merge_ligand_away_states(assignment, structures, site, cutoff, rule)
   end
 
-  private def self.build_state_matrix(structures : Array(Chem::Structure), opts : Options, units : Array(Array(ResId))) : StateMatrix
+  private def self.build_state_matrix(structures : Array(Chem::Structure), site : Array(ResId), units : Array(Array(ResId)), cutoff : Float64, rule : HClust::Rule) : StateMatrix
     columns = [] of UnitAssignment
     units.each do |resids|
-      if assignment = cluster_unit(structures, resids, opts)
+      if assignment = cluster_unit(structures, resids, site, cutoff, rule)
         columns << assignment
       end
     end
@@ -119,7 +125,8 @@ module Resconf
     assignment : UnitAssignment,
     structures : Array(Chem::Structure),
     site_resids : Array(ResId),
-    opts : Options,
+    cutoff : Float64,
+    rule : HClust::Rule,
   ) : UnitAssignment?
     resids = assignment.resids
     r2 = SITE_RADIUS * SITE_RADIUS
@@ -136,7 +143,7 @@ module Resconf
     if n_face == 0
       n_bb = structures.count { |s| unit_bb_contacts_ligand?(s, resids, site_resids, r2) }
       return nil if n_bb < min_frames
-      bb = cluster_backbone_assignment(structures, resids, opts)
+      bb = cluster_backbone_assignment(structures, resids, cutoff, rule)
       return nil unless bb.n_states > 1
       return bb
     end
@@ -155,10 +162,10 @@ module Resconf
     merged
   end
 
-  private def self.cluster_backbone_assignment(structures : Array(Chem::Structure), resids : Array(ResId), opts : Options) : UnitAssignment
+  private def self.cluster_backbone_assignment(structures : Array(Chem::Structure), resids : Array(ResId), cutoff : Float64, rule : HClust::Rule) : UnitAssignment
     dmat = HClust::DistanceMatrix.new(structures) { |a, b| backbone_site_rmsd(a, b, resids) }
-    labels = HClust.linkage(dmat, opts.rule).labels(opts.cutoff)
-    UnitAssignment.new(resids, labels).merge_rare(dmat, RARE_FLOOR, opts.cutoff)
+    labels = HClust.linkage(dmat, rule).labels(cutoff)
+    UnitAssignment.new(resids, labels).merge_rare(dmat, RARE_FLOOR, cutoff)
   end
 
   # True if any side-chain heavy atom of *resids* lies within SITE_RADIUS of the

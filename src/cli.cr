@@ -161,6 +161,31 @@ def load_structures(paths : Array(Path)) : Array(Chem::Structure)
   structures
 end
 
+class Options
+  getter residues : Array(Resconf::ResId) = [] of Resconf::ResId
+  property cutoff : Float64 = 2.0
+  property rule : HClust::Rule = :complete
+  property prealigned : Bool = false
+  property renumber : Bool = false
+  # Structure or FASTA sequence for renumbering (set while parsing).
+  property renumber_ref : Chem::Structure | String | Nil = nil
+  property renumber_label : String? = nil
+  # Frame for alignment and PSIQUE (set while parsing when a path is given).
+  property reference : Chem::Structure? = nil
+end
+
+# The structure whose ligand site has the most residues, then the fewest
+# incomplete ones, the best resolution, and the first title.
+def select_frame(structures : Array(Chem::Structure)) : Chem::Structure
+  ensemble = Resconf::ProteinEnsemble.new(structures)
+  index = (0...ensemble.size).select { |i| ensemble[i].site_chains }.min_by do |i|
+    residues = (ensemble[i].site_chains || [] of Chem::Chain).flat_map { |chain| chain.residues.select(&.amino_acid?).to_a }
+    resolution = structures[i].experiment.try(&.resolution) || Float64::MAX
+    {-residues.size, residues.count { |residue| !residue.complete? }, resolution, structures[i].title}
+  end
+  structures[index]
+end
+
 def read_structure(path : String) : Chem::Structure
   abort "error: file not found: #{path}" unless File.file?(path)
   abort "error: #{path} is not a structure file" unless Chem.guess_format?(path, Chem::Structure)
@@ -170,7 +195,7 @@ def read_structure(path : String) : Chem::Structure
 end
 
 begin
-  opts = Resconf::Options.new
+  opts = Options.new
   output = nil.as(Path?)
   OptionParser.parse(gnu_optional_args: true) do |parser|
     parser.banner = "Usage: resconf -o PREFIX [options] FILE...\n       resconf -r RESIDUES --prealigned -o PREFIX FILE..."
@@ -248,11 +273,11 @@ begin
     label = opts.renumber_label
     case ref = opts.renumber_ref
     when String
-      reference = opts.reference || Resconf.select_frame(structures)
+      reference = opts.reference || select_frame(structures)
       Resconf.renumber_ensemble(structures, ref, reference)
       label ||= reference.title
     else
-      numbering = ref || Resconf.select_frame(structures)
+      numbering = ref || select_frame(structures)
       Resconf.renumber_ensemble(structures, numbering)
       label ||= numbering.title
     end
@@ -278,7 +303,7 @@ begin
 
   write_binding_site prefix, opts.residues
 
-  frame = opts.reference || Resconf.select_frame(structures)
+  frame = opts.reference || select_frame(structures)
 
   unless opts.prealigned
     Resconf.align_on_site(structures, opts.residues, frame)
@@ -286,7 +311,7 @@ begin
   end
 
   puts "Clustering at #{opts.cutoff} A (#{opts.rule.to_s.downcase})..."
-  selection = Resconf.select_receptors(structures, opts, frame)
+  selection = Resconf.select_receptors(structures, opts.residues, frame, opts.cutoff, opts.rule)
   unassigned = find_unassigned_outliers(structures, selection.matrix)
   report_unassigned unassigned, opts.cutoff unless unassigned.empty?
   puts "Found #{selection.candidates.size} of #{opts.residues.size} site residues with multiple conformations"

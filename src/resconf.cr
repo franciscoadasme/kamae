@@ -70,32 +70,6 @@ module Resconf
   # Pipeline failure a caller can rescue. The CLI prints it and exits.
   class Error < Exception
   end
-
-  class Options
-    getter residues : Array(ResId) = [] of ResId
-    property cutoff : Float64 = 2.0
-    property rule : HClust::Rule = :complete
-    property prealigned : Bool = false
-    property renumber : Bool = false
-    # Structure or FASTA sequence for `renumber_ensemble` (set while parsing).
-    property renumber_ref : Chem::Structure | String | Nil = nil
-    property renumber_label : String? = nil
-    # Frame for alignment and PSIQUE (set while parsing when a path is given).
-    property reference : Chem::Structure? = nil
-  end
-
-  # The structure whose ligand site has the most residues, then the fewest
-  # incomplete ones, the best resolution, and the first title. Used as the
-  # coordinate and secondary-structure frame when none is given.
-  def self.select_frame(structures : Array(Chem::Structure)) : Chem::Structure
-    ensemble = ProteinEnsemble.new(structures)
-    index = (0...ensemble.size).select { |i| ensemble[i].site_chains }.min_by do |i|
-      residues = (ensemble[i].site_chains || [] of Chem::Chain).flat_map { |chain| amino_acids(chain) }
-      resolution = structures[i].experiment.try(&.resolution) || Float64::MAX
-      {-residues.size, residues.count { |residue| !residue.complete? }, resolution, structures[i].title}
-    end
-    structures[index]
-  end
 end
 
 require "./resconf/clustering"

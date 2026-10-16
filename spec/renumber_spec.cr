@@ -151,18 +151,3 @@ describe "#renumber_ensemble" do
     structures.map(&.title).should eq %w(1REF 2REL)
   end
 end
-
-describe "#select_frame" do
-  it "selects the structure whose site has the most residues regardless of order" do
-    gapped = build_structure("1GAP") do |builder|
-      add_chain builder, 'A', sequence.sub(17..19, "---")
-      add_ligand builder, near: 10
-    end
-    full = build_structure("2FUL") do |builder|
-      add_chain builder, 'A', sequence
-      add_ligand builder, near: 10
-    end
-    Resconf.select_frame([gapped, full]).should be full
-    Resconf.select_frame([full, gapped]).should be full
-  end
-end
