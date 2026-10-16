@@ -1,6 +1,6 @@
 # kamae
 
-*構え, the stance a body holds — the binding-site postures that stand in for the ensemble.*
+_構え, the stance a body holds — the binding-site postures that stand in for the ensemble._
 
 Select representative protein structures from a crystal (or MD) ensemble
 for ensemble docking. Per-residue heavy-atom conformations at the binding
@@ -24,21 +24,18 @@ The executable is `bin/kamae`. `--renumber` also needs
 
 ```text
 kamae -o PREFIX [options] FILE...
-kamae -r RESIDUES --prealigned -o PREFIX FILE...
 ```
 
 `FILE` is any structure file readable by chem.cr (PDB, Maestro, …), a
 multi-structure file, or a directory of them.
 
-| Option | Description |
-|---|---|
-| `-r`, `--residues LIST` | Binding-site residues (`A:64,A:135`, insertion codes as `A:14A`) or a `.txt` file with that list. Auto-detected when omitted. |
-| `--prealigned` | Skip the site alignment (structures already superimposed). |
-| `--renumber[=REF]` | Give the site chains consistent chain ids and residue numbering after `REF`, a FASTA or structure file (chosen from the ensemble when omitted). Needs MAFFT. |
-| `--reference PATH` | Structure used as the frame for alignment and secondary structure. A structure given to `--renumber` sets this as well. |
-| `-d`, `--cutoff NUMBER` | Clustering height in Å (default 2). |
-| `--linkage RULE` | `complete` (default), `average`, `single` or `weighted`. |
-| `-o`, `--output PREFIX` | Output path prefix. |
+| Option                  | Description                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `-r`, `--residues LIST` | Binding-site residues (`A:64,A:135`, insertion codes as `A:14A`) or a `.txt` file with that list. Auto-detected when omitted.                                |
+| `--prealigned`          | Skip the site alignment (structures already superimposed).                                                                                                   |
+| `--renumber[=REF]`      | Give the site chains consistent chain ids and residue numbering after `REF`, a FASTA or structure file (chosen from the ensemble when omitted). Needs MAFFT. |
+| `--reference PATH`      | Structure used as the frame for alignment and secondary structure. A structure given to `--renumber` sets this as well.                                      |
+| `-o`, `--output PREFIX` | Output path prefix.                                                                                                                                          |
 
 Examples:
 
@@ -56,10 +53,11 @@ kamae --renumber=P00918.fasta --reference=prepared.pdb -o out/target pdbs/
 kamae -r site.txt --prealigned -o out/target ensemble.maegz
 ```
 
-Warnings (e.g., ignored incomplete residues, structures left unassigned
-as outliers, or site residues moving more than 20 Å between structures)
-are written to standard error;
-set `LOG_LEVEL=error` to silence them.
+> [!NOTE]
+> Warnings (e.g., ignored incomplete residues, structures left unassigned
+> as outliers, or site residues moving more than 20 Å between structures)
+> are written to standard error;
+> set `LOG_LEVEL=error` to silence them.
 
 ### Outputs
 
@@ -72,88 +70,112 @@ set `LOG_LEVEL=error` to silence them.
 - `{prefix}_renumbered.maegz` — the renumbered ensemble (`--renumber`), before alignment
 - `{prefix}_aligned.maegz` — the ensemble after site superposition (unless `--prealigned`)
 
+### Library
+
+Kamae can be used programmaticaly, providing each main analisys as callable method.
+`require "kamae"` loads the `Kamae` module.
+The following steps replicate the command-line interface:
+
+```crystal
+require "kamae"
+
+site = Kamae.detect_binding_site(structures)
+Kamae.align_on_site(structures, site, frame)
+matrix = Kamae.state_matrix(structures, site, frame)
+matrix.fingerprints
+Kamae.select_medoids(structures, matrix) # one structure per stance kept for docking
+```
+
+`Kamae.select_receptors` runs the last two steps and returns the structures.
+`frame` is a `Chem::Structure` in the ensemble, used for secondary structure and alignment.
+Failures raise `Kamae::Error`.
+
 ## Protocol
 
-0. **Renumbering** (`--renumber`). Protein chains (≥ 20 residues) are
-   grouped by sequence into protein families. In each structure, the ligand
-   site is the set of those chains within 5 Å of the ligand with the most
-   protein contacts, among ligands contacting the most common combination
-   of families, including several copies of the same protein. Copies take
-   the chain id of the reference copy they superimpose on. Structures
-   without such a ligand use the chains that superimpose best on the frame
-   structure (below).
-   - Each protein is aligned with MAFFT, with chain breaks padded so
-     residues flanking a missing loop stay on the right side, and
-     numbered after the reference: the author numbering (with insertion
-     codes) of a reference structure, or the positions of a FASTA
-     sequence. Residues absent from the reference take the free numbers
-     in between, or insertion codes.
-   - The frame used for alignment and secondary structure is set with
-     `--reference`, or by a structure given to `--renumber` (which
-     overrides `--reference`). It is not added to the ensemble when it is
-     not already among the inputs. A FASTA given to `--renumber` only
-     affects numbering; the frame is then `--reference` or, if omitted,
-     the structure whose ligand site has the most residues (then fewest
-     incomplete ones, best resolution, and ID).
-   - Ligand-site chains take the reference chain ids. Other protein chains are
-     removed; ligands, peptides, waters and ions are kept within 5 Å of
-     the ligand site. Structures whose chain is less than 80 % identical to the
-     reference are dropped and reported.
-1. **Binding site.** Unless given with `-r`, the site is detected from the
-   co-crystallized ligands:
-   - Ligands are molecules (residues joined by covalent bonds) with 5–100
-     heavy atoms, excluding solvent, ions and common additives (Maestro
-     `LigandParameters` defaults). Coordination bonds do not join
-     molecules. Peptides count as ligands, but pieces of a protein chain
-     do not; ligands covalently bound to the protein are not detected.
-     Bonds are guessed when the input has none.
-   - Each ligand defines a pocket: the protein residues within 5 Å (heavy
-     atoms). Pockets sharing at least half of the smaller one are linked
-     across the ensemble, and the group seen in the most structures is the
-     binding site: the union of its pockets, restricted to residues in
-     the pockets of at least max(3, 1 %) of its structures (so a single
-     large ligand does not extend the site).
-   - Residues of a different type in any structure are dropped.
-   - A residue missing a heavy atom of its template, or absent, is ignored
-     in that structure by every later step: it gets no state, and the
-     structure cannot represent a fingerprint that needs it. Residues
-     ignored in more than half of the structures are dropped from the
-     site. Ignored residues are reported; fill them beforehand (e.g.,
-     PDBFixer, MODELLER, or Schrödinger's Protein Preparation Wizard) for
-     a complete analysis.
-2. **Alignment.** Unless `--prealigned`, the site Cα atoms of every
-   structure are superimposed on their ensemble mean, iteratively
-   down-weighting mobile atoms (Gaussian weights of the per-atom deviation,
-   1 Å width) so the fit rests on the rigid part of the pocket. The result
-   does not depend on the orientation in which structures are given.
-3. **Fingerprint units.** Only site residues with more than one
-   conformation are candidates (each residue clustered alone at 2 Å,
-   complete linkage, before any filter; GLY and PRO are never clustered).
-   PSIQUE is used only to keep helices out of loop blocks. A non-helical
-   candidate is mobile when its backbone (N, Cα, C) has more than one
-   complete-linkage state at 2 Å. Mobile residues within 5 Å of the pocket
-   ligand that share a secondary-structure element, or are sequence
-   neighbors, become one block (every heavy atom). A mobile residue that
-   never contacts the ligand is dropped.
-4. **Unit states.** Each unit's in-place heavy-atom conformations are
-   clustered (hierarchical, complete linkage at 2 Å by default). Then:
-   - a state under 5 % of known structures is merged into the kept state
-     whose medoid is nearest, if the structure lies within the clustering
-     cutoff of any member of that state; otherwise it is left unassigned
-     (`?`) and reported;
-   - side-chain states that never face the ligand (a side-chain heavy atom
-     within 5 Å) are merged, where facing in fewer than max(3, 1 % of holo)
-     structures counts as never; if none does, the unit is reclustered on
-     the backbone when the backbone comes within 5 Å in that same number of
-     holo structures, or dropped. Loop blocks are left unchanged.
-5. **Redundant columns.** A later column known on the same structures, and
-   labeling them with the same partition (including a relabeling), is dropped.
-6. **Representatives.** One site-RMSD medoid is kept per unique
-   fingerprint. Frequent fingerprints (≥ 5 %) are always kept, the rest
-   are reduced by structural redundancy, and any medoid needed to cover
-   every state of every column is restored. Only structures with every
-   state known are medoids; one with an unknown state is restored only if
-   no other structure has that state.
+- **Renumbering** (`--renumber`). Protein chains (≥ 20 residues) are
+  grouped by sequence into protein families. In each structure, the ligand
+  site is the set of those chains within 5 Å of the ligand with the most
+  protein contacts, among ligands contacting the most common combination
+  of families, including several copies of the same protein. Copies take
+  the chain id of the reference copy they superimpose on. Structures
+  without such a ligand use the chains that superimpose best on the frame
+  structure (below).
+  - Each protein is aligned with MAFFT, with chain breaks padded so
+    residues flanking a missing loop stay on the right side, and
+    numbered after the reference: the author numbering (with insertion
+    codes) of a reference structure, or the positions of a FASTA
+    sequence. Residues absent from the reference take the free numbers
+    in between, or insertion codes.
+  - The frame used for alignment and secondary structure is set with
+    `--reference`, or by a structure given to `--renumber` (which
+    overrides `--reference`). It is not added to the ensemble when it is
+    not already among the inputs. A FASTA given to `--renumber` only
+    affects numbering; the frame is then `--reference` or, if omitted,
+    the structure whose ligand site has the most residues (then fewest
+    incomplete ones, best resolution, and ID).
+  - Ligand-site chains take the reference chain ids. Other protein chains are
+    removed; ligands, peptides, waters and ions are kept within 5 Å of
+    the ligand site. Structures whose chain is less than 80 % identical to the
+    reference are dropped and reported.
+- **Binding site.** Unless given with `-r`, the site is detected from the
+  co-crystallized ligands:
+  - Ligands are molecules (residues joined by covalent bonds) with 5–100
+    heavy atoms, excluding solvent, ions and common additives (Maestro
+    `LigandParameters` defaults). Coordination bonds do not join
+    molecules. Peptides count as ligands, but pieces of a protein chain
+    do not; ligands covalently bound to the protein are not detected.
+    Bonds are guessed when the input has none.
+  - Each ligand defines a pocket: the protein residues within 5 Å (heavy
+    atoms). Pockets sharing at least half of the smaller one are linked
+    across the ensemble, and the group seen in the most structures is the
+    binding site: the union of its pockets, restricted to residues in
+    the pockets of at least max(3, 1 %) of its structures (so a single
+    large ligand does not extend the site).
+  - Residues of a different type in any structure are dropped.
+  - A residue missing a heavy atom of its template, or absent, is ignored
+    in that structure by every later step: it gets no state, and the
+    structure cannot represent a fingerprint that needs it. Residues
+    ignored in more than half of the structures are dropped from the
+    site. Ignored residues are reported; fill them beforehand (e.g.,
+    PDBFixer, MODELLER, or Schrödinger's Protein Preparation Wizard) for
+    a complete analysis.
+
+- **Alignment.** Unless `--prealigned`, the site Cα atoms of every
+  structure are superimposed on their ensemble mean, iteratively
+  down-weighting mobile atoms (Gaussian weights of the per-atom deviation,
+  1 Å width) so the fit rests on the rigid part of the pocket. The result
+  does not depend on the orientation in which structures are given.
+- **Fingerprint units.** Only site residues with more than one
+  conformation are candidates (each residue clustered alone at 2 Å,
+  complete linkage, before any filter; GLY and PRO are never clustered).
+  PSIQUE is used only to keep helices out of loop blocks. A non-helical
+  candidate is mobile when its backbone (N, Cα, C) has more than one
+  complete-linkage state at 2 Å. Mobile residues within 5 Å of the pocket
+  ligand that share a secondary-structure element, or are sequence
+  neighbors, become one block (every heavy atom). A mobile residue that
+  never contacts the ligand is dropped.
+
+- **Unit states.** Each unit's in-place heavy-atom conformations are
+  clustered (hierarchical, complete linkage at 2 Å). Then:
+  - a state under 5 % of known structures is merged into the kept state
+    whose medoid is nearest, if the structure lies within the clustering
+    cutoff of any member of that state; otherwise it is left unassigned
+    (`?`) and reported;
+  - side-chain states that never face the ligand (a side-chain heavy atom
+    within 5 Å) are merged, where facing in fewer than max(3, 1 % of holo)
+    structures counts as never; if none does, the unit is reclustered on
+    the backbone when the backbone comes within 5 Å in that same number of
+    holo structures, or dropped. Loop blocks are left unchanged.
+
+- **Redundant columns.** A later column known on the same structures, and
+  labeling them with the same partition (including a relabeling), is dropped.
+
+- **Representatives.** One site-RMSD medoid is kept per unique
+  fingerprint. Frequent fingerprints (≥ 5 %) are always kept, the rest
+  are reduced by structural redundancy, and any medoid needed to cover
+  every state of every column is restored. Only structures with every
+  state known are medoids; one with an unknown state is restored only if
+  no other structure has that state.
 
 Assumptions: residue numbering is consistent across the ensemble, and
 holo structures are preferred for site detection. Side-chain symmetry
@@ -178,21 +200,18 @@ structures), whose assignment is taken as is.
   deuterium (`D`). A file that contains either fails to load; those atoms
   have to be removed first.
 
-## Library
+## Contributing
 
-`require "kamae"` loads the `Kamae` module and leaves the program root empty. The command above is `src/cli.cr`. A library caller can stop after the fingerprints:
+- Fork it (https://github.com/franciscoadasme/psique/fork)
+- Create your feature branch (git checkout -b my-new-feature)
+- Commit your changes (git commit -am 'Add some feature')
+- Push to the branch (git push origin my-new-feature)
+- Create a new Pull Request
 
-```crystal
-require "kamae"
+## Contributors
 
-site = Kamae.detect_binding_site(structures)
-matrix = Kamae.state_matrix(structures, site, frame, 2.0, :complete)
-matrix.fingerprints
-Kamae.select_medoids(structures, matrix, 2.0) # one structure per stance kept for docking
-```
-
-`Kamae.select_receptors` runs both steps and returns the structures. `frame` is a `Chem::Structure` in the ensemble, used for secondary structure. `2.0` is the clustering cutoff in Å and `:complete` is the linkage (`:average`, `:single`, and `:weighted` are the others). The same cutoff is the redundancy distance for `select_medoids`. Failures raise `Kamae::Error`.
+- Francisco Adasme ([fadasme@ucm.cl](mailto:fadasme@ucm.cl)) - creator and maintainer
 
 ## License
 
-[MIT](LICENSE).
+Licensed under the MIT license, see the separate LICENSE file.
