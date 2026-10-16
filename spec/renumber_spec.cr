@@ -70,7 +70,7 @@ describe "#renumber_ensemble" do
       add_chain builder, 'A', sequence, first_number: 101
       add_ligand builder, near: 10
     end
-    Resconf.renumber_ensemble([structure], "GS" + sequence)
+    Resconf.renumber_ensemble([structure], "GS" + sequence, structure)
     residue_ids(structure, 'A').map(&.[0]).should eq (3..35).to_a
   end
 
@@ -79,7 +79,7 @@ describe "#renumber_ensemble" do
       add_chain builder, 'A', sequence.insert(15, "WW")
       add_ligand builder, near: 10
     end
-    Resconf.renumber_ensemble([structure], sequence)
+    Resconf.renumber_ensemble([structure], sequence, structure)
     residue_ids(structure, 'A')[14, 4].should eq [{15, nil}, {15, 'A'}, {15, 'B'}, {16, nil}]
   end
 

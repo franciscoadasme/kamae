@@ -38,12 +38,14 @@ module Resconf
   end
 
   # Renumbers *structures* in place after the positions (from 1) of
-  # *sequence*. Chain ids follow the first structure with a ligand site.
-  # Structures that cannot be renumbered are removed and reported.
-  def self.renumber_ensemble(structures : Array(Chem::Structure), sequence : String) : Nil
-    ensemble = ProteinEnsemble.new(structures)
-    frame_chains = ensemble.compact_map(&.site_chains).first? ||
-                   raise Error.new("no structure has a ligand at the site")
+  # *sequence*. Chain ids follow *reference*, which must have a ligand site
+  # and may be one of *structures*. Structures that cannot be renumbered are
+  # removed and reported.
+  def self.renumber_ensemble(structures : Array(Chem::Structure), sequence : String, reference : Chem::Structure) : Nil
+    members = structures.any?(&.same?(reference)) ? structures : structures + [reference]
+    ensemble = ProteinEnsemble.new(members)
+    frame_chains = ensemble[members.index!(&.same?(reference))].site_chains ||
+                   raise Error.new("#{reference.title} has no ligand at the site")
     sequence = sequence.upcase
     references = ensemble.site_family_ids.uniq.to_h do |family_id|
       chain = ensemble.find_chain!(frame_chains, family_id)

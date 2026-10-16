@@ -245,9 +245,17 @@ begin
   Dir.mkdir_p(parent.to_s) unless parent.to_s.empty? || parent.to_s == "."
 
   if opts.renumber
-    renumber_ref = opts.renumber_ref || Resconf.select_frame(structures)
-    Resconf.renumber_ensemble(structures, renumber_ref)
-    label = opts.renumber_label || renumber_ref.as(Chem::Structure).title
+    label = opts.renumber_label
+    case ref = opts.renumber_ref
+    when String
+      reference = opts.reference || Resconf.select_frame(structures)
+      Resconf.renumber_ensemble(structures, ref, reference)
+      label ||= reference.title
+    else
+      numbering = ref || Resconf.select_frame(structures)
+      Resconf.renumber_ensemble(structures, numbering)
+      label ||= numbering.title
+    end
     puts "Renumbered #{structures.size} structures after #{label}"
     path = "#{prefix}_renumbered.maegz"
     structures.to_maestro path
