@@ -2,23 +2,79 @@
 
 _構え, the stance a body holds — the binding-site postures that stand in for the ensemble._
 
-Select representative protein structures from a crystal (or MD) ensemble
-for ensemble docking. Per-residue heavy-atom conformations at the binding
-site are clustered into fingerprints, and one medoid is kept per unique
+Select representative protein structures from a crystal (or MD) ensemble for structure-based drug design.
+Per-residue heavy-atom conformations at the binding site are clustered via residue-wise fingerprints, and one medoid is kept per unique
 fingerprint after structural redundancy reduction.
 
-## Install
+## Installation
 
-Requires [Crystal](https://crystal-lang.org/) ≥ 1.15 and shards.
+kamae can be downloaded from the GitHub repository or built from the source code. _The former is recommended for most cases._
+
+### Pre-built binaries
+
+Binaries for Linux, macOS, and Windows are available. Go to the webpage of the [latest release](https://github.com/franciscoadasme/kamae/releases/latest), manually download and decompress the executable. Alternatively, use the following command line:
+
+#### Linux
 
 ```sh
-shards install
-shards build --release
+wget https://github.com/franciscoadasme/kamae/releases/latest/download/kamae-linux-x86_64.gz -O kamae.gz && \
+gzip -d kamae.gz && \
+chmod u+x kamae
 ```
 
-The executable is `bin/kamae`. `--renumber` also needs
-[MAFFT](https://mafft.cbrc.jp/alignment/software/) on the `PATH` (e.g.,
-`apt install mafft`).
+#### macOS
+
+```sh
+curl -L https://github.com/franciscoadasme/kamae/releases/latest/download/kamae-macos-arm64.zip -o kamae.zip && \
+unzip kamae.zip && \
+chmod u+x kamae
+```
+
+#### Windows
+
+To download and unzip the Windows executable using PowerShell, run:
+
+```powershell
+Invoke-WebRequest -Uri "https://github.com/franciscoadasme/kamae/releases/latest/download/kamae-windows-x86_64.zip" -OutFile "kamae.zip"
+Expand-Archive -Path "kamae.zip" -DestinationPath "."
+```
+
+This should place the `kamae.exe` executable along with the required DLLs in the current directory.
+
+### From source
+
+You need to install the Crystal compiler (≥ 1.15) by following [these steps](https://crystal-lang.org/install). Once it is installed, check the compiler by running:
+
+```sh
+crystal -v
+```
+
+Then, download the source code of the latest version of this repository from [here](https://github.com/franciscoadasme/kamae/releases/latest) and decompress it, or clone it via the [git](https://git-scm.com/) source control system. Afterwards, do the following:
+
+```sh
+cd /path/to/kamae
+shards build --release --progress
+```
+
+If using a Unix-like OS like Ubuntu or macOS, copy the following commands to do these steps from the terminal:
+
+```sh
+tag=$(curl -s https://api.github.com/repos/franciscoadasme/kamae/releases/latest | grep "tag_name" | cut -d\" -f4)
+wget https://github.com/franciscoadasme/kamae/archive/$tag.tar.gz -O kamae-${tag#v}.tar.gz
+tar xvf kamae-${tag#v}.tar.gz
+cd kamae-${tag#v}
+shards build --release --progress
+```
+
+Once the compilation finishes, the `kamae` executable is created at `bin/kamae`. Check the compilation by:
+
+```sh
+./bin/kamae --version
+```
+
+> [!NOTE]
+> `--renumber` needs [MAFFT](https://mafft.cbrc.jp/alignment/software/) on the `PATH`.
+> Install it with `apt install mafft` or `brew install mafft`.
 
 ## Usage
 
