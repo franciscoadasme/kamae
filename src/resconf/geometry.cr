@@ -28,7 +28,7 @@ module Resconf
   # if that lowers the in-place deviation, unless both residues have hydrogens
   # (atoms assumed placed correctly, e.g., prepared structures). Atoms missing
   # from either residue are skipped.
-  def self.pair_heavy_atoms_resolving_flips(a : Chem::Residue, b : Chem::Residue) : {Array(Chem::Atom), Array(Chem::Atom)}
+  private def self.pair_heavy_atoms_resolving_flips(a : Chem::Residue, b : Chem::Residue) : {Array(Chem::Atom), Array(Chem::Atom)}
     atoms_a = [] of Chem::Atom
     atoms_b = [] of Chem::Atom
     a.atoms.each do |atom|

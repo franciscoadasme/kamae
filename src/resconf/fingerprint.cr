@@ -33,31 +33,31 @@ module Resconf
       @resids.size == 1 ? @resids[0].to_s : @resids.map(&.to_s).join('+')
     end
 
-    def n_states : Int32
+    protected def n_states : Int32
       (@labels.compact.max? || 0) + 1
     end
 
-    def count_states : Array(Int32)
+    protected def count_states : Array(Int32)
       counts = Array.new(n_states, 0)
       @labels.each { |c| counts[c] += 1 if c }
       counts
     end
 
     # Number of structures with a known state.
-    def count_known : Int32
+    protected def count_known : Int32
       @labels.count { |c| !c.nil? }
     end
 
     # Spreads the labels of a clustering of a subset of structures (*indices*)
     # over an ensemble of *size*; the rest are unknown (nil).
-    def expand(indices : Array(Int32), size : Int32) : UnitAssignment
+    protected def expand(indices : Array(Int32), size : Int32) : UnitAssignment
       labels = Array(Int32?).new(size, nil)
       indices.each_with_index { |i, k| labels[i] = @labels[k] }
       UnitAssignment.new(@resids, labels)
     end
 
     # Renumber labels 0..k-1 by descending population (#structures per state).
-    def relabel_by_population : UnitAssignment
+    protected def relabel_by_population : UnitAssignment
       counts = Hash(Int32, Int32).new(0)
       @labels.each { |c| counts[c] += 1 if c }
       order = counts.keys.sort_by { |c| {-counts[c], c} }
@@ -70,7 +70,7 @@ module Resconf
     # to the kept state with the nearest medoid, provided it lies within
     # *max_distance* of at least one member of that state; otherwise it is left
     # unassigned (nil).
-    def merge_rare(dmat : HClust::DistanceMatrix, floor : Float64, max_distance : Float64) : UnitAssignment
+    protected def merge_rare(dmat : HClust::DistanceMatrix, floor : Float64, max_distance : Float64) : UnitAssignment
       n = @labels.size
       counts = count_states
       n_known = counts.sum
@@ -104,7 +104,7 @@ module Resconf
 
     # True when both columns are known on the same structures and their labels
     # define the same partition (a relabeling, not necessarily the same integers).
-    def same_partition?(other : UnitAssignment) : Bool
+    protected def same_partition?(other : UnitAssignment) : Bool
       return false unless size == other.size
       forward = {} of Int32 => Int32
       reverse = {} of Int32 => Int32
@@ -185,7 +185,7 @@ module Resconf
     end
 
     # Keep the earliest column from each group with an identical labeling.
-    def prune_redundant : StateMatrix
+    protected def prune_redundant : StateMatrix
       n = @columns.size
       return self if n < 2
 

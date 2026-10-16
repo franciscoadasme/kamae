@@ -42,15 +42,16 @@ private def make_ser(*, include_oxt : Bool = false) : Chem::Residue
   make_residue "SER", atoms
 end
 
+module Resconf
 describe "pair_heavy_atoms_resolving_flips" do
   it "pairs heavy atoms by name" do
-    atoms, matches = Resconf.pair_heavy_atoms_resolving_flips(make_gln, make_gln)
+    atoms, matches = pair_heavy_atoms_resolving_flips(make_gln, make_gln)
     atoms.map(&.name).should eq %w(N CA C O CB CG CD OE1 NE2)
     matches.map(&.name).should eq %w(N CA C O CB CG CD OE1 NE2)
   end
 
   it "swaps a flipped amide" do
-    atoms, matches = Resconf.pair_heavy_atoms_resolving_flips(make_gln, make_gln(flipped: true))
+    atoms, matches = pair_heavy_atoms_resolving_flips(make_gln, make_gln(flipped: true))
     matches.map(&.name).should eq %w(N CA C O CB CG CD NE2 OE1)
     atoms.zip(matches).all? { |x, y| x.pos == y.pos }.should be_true
   end
@@ -58,23 +59,24 @@ describe "pair_heavy_atoms_resolving_flips" do
   it "does not swap when both residues have hydrogens" do
     a = make_gln(include_hydrogens: true)
     b = make_gln(flipped: true, include_hydrogens: true)
-    _, matches = Resconf.pair_heavy_atoms_resolving_flips(a, b)
+    _, matches = pair_heavy_atoms_resolving_flips(a, b)
     matches.map(&.name).should eq %w(N CA C O CB CG CD OE1 NE2)
   end
 
   it "swaps when only one residue has hydrogens" do
-    _, matches = Resconf.pair_heavy_atoms_resolving_flips(make_gln(include_hydrogens: true), make_gln(flipped: true))
+    _, matches = pair_heavy_atoms_resolving_flips(make_gln(include_hydrogens: true), make_gln(flipped: true))
     matches.map(&.name).should eq %w(N CA C O CB CG CD NE2 OE1)
   end
 
   it "does not swap atoms of other residues" do
-    _, matches = Resconf.pair_heavy_atoms_resolving_flips(make_glu, make_glu(flipped: true))
+    _, matches = pair_heavy_atoms_resolving_flips(make_glu, make_glu(flipped: true))
     matches.map(&.name).should eq %w(N CA C O CB CG CD OE1 OE2)
   end
 
   it "skips atoms missing from either residue" do
-    atoms, matches = Resconf.pair_heavy_atoms_resolving_flips(make_ser(include_oxt: true), make_ser)
+    atoms, matches = pair_heavy_atoms_resolving_flips(make_ser(include_oxt: true), make_ser)
     atoms.map(&.name).should eq %w(N CA C O CB OG)
     matches.map(&.name).should eq %w(N CA C O CB OG)
   end
+end
 end

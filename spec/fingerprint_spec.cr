@@ -19,7 +19,8 @@ private def make_assignment(labels : Array(Int32?)) : Resconf::UnitAssignment
   Resconf::UnitAssignment.new([Resconf::ResId.new('A', 1)], labels)
 end
 
-describe Resconf::UnitAssignment do
+module Resconf
+describe UnitAssignment do
   describe "#merge_rare" do
     it "merges a rare structure within the maximum distance of a target member" do
       dmat = make_dmat([3.0, 2.0, 3.5, 4.0, 4.0, 4.0])
@@ -69,16 +70,17 @@ describe Resconf::UnitAssignment do
   end
 end
 
-describe Resconf::StateMatrix do
+describe StateMatrix do
   describe "#prune_redundant" do
     it "keeps the earlier column when two columns are the same partition" do
       columns = [
-        Resconf::UnitAssignment.new([Resconf::ResId.new('A', 1)], [0, 0, 1, nil].map(&.as(Int32?))),
-        Resconf::UnitAssignment.new([Resconf::ResId.new('A', 2)], [1, 1, 0, nil].map(&.as(Int32?))),
-        Resconf::UnitAssignment.new([Resconf::ResId.new('A', 3)], [0, 1, 0, 1].map(&.as(Int32?))),
+        UnitAssignment.new([ResId.new('A', 1)], [0, 0, 1, nil].map(&.as(Int32?))),
+        UnitAssignment.new([ResId.new('A', 2)], [1, 1, 0, nil].map(&.as(Int32?))),
+        UnitAssignment.new([ResId.new('A', 3)], [0, 1, 0, 1].map(&.as(Int32?))),
       ]
-      kept = Resconf::StateMatrix.new(columns).prune_redundant
+      kept = StateMatrix.new(columns).prune_redundant
       kept.column_labels.should eq ["A:1", "A:3"]
     end
   end
+end
 end
