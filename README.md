@@ -214,4 +214,5 @@ structures), whose assignment is taken as is.
 
 ## License
 
-Licensed under the MIT license, see the separate LICENSE file.
+Copyright (c) 2026 Francisco Adasme.
+Licensed under the GNU General Public License version 3, see the separate LICENSE file.
