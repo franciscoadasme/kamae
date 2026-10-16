@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-linux-x86_64:
+    runs-on: ubuntu-latest
+    container:
+      image: crystallang/crystal:latest-alpine
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: shards install --production
+      - name: Build static binary
+        run: shards build --release --static --stats --progress
+      - name: Strip binary
+        run: strip bin/kamae
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-linux-x86_64
+          path: bin/kamae
+
+  build-macos-arm64:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crystal-lang/install-crystal@v1
+      - name: Install dependencies
+        run: shards install --production
+      - name: Build binary
+        run: shards build --release --stats --progress
+      - name: Strip binary
+        run: strip bin/kamae
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-macos-arm64
+          path: bin/kamae
+
+  build-windows-x86_64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crystal-lang/install-crystal@v1
+      - name: Install dependencies
+        run: shards install --production
+      - name: Build binary
+        run: shards build --release --stats --progress
+      - name: Bundle Crystal runtime DLLs
+        shell: pwsh
+        run: |
+          $crystalDir = Split-Path (Get-Command crystal).Source
+          $dlls = @('gc.dll', 'yaml.dll', 'pcre2-8.dll', 'iconv-2.dll')
+          foreach ($dll in $dlls) {
+            $src = Get-ChildItem -Path $crystalDir -Filter $dll -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($src) {
+              Copy-Item $src.FullName bin\
+              Write-Host "Bundled $dll from $($src.FullName)"
+            } else {
+              Write-Warning "DLL not found: $dll"
+            }
+          }
+          Write-Host "--- bin/ contents ---"
+          Get-ChildItem bin\
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-windows-x86_64
+          path: bin/
+
+  github-release:
+    needs: [build-linux-x86_64, build-macos-arm64, build-windows-x86_64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+      - name: Prepare release assets
+        run: |
+          mkdir release
+          gzip -c artifacts/bin-linux-x86_64/kamae > release/kamae-linux-x86_64.gz
+          zip -jX release/kamae-macos-arm64.zip artifacts/bin-macos-arm64/kamae
+          zip -jX release/kamae-windows-x86_64.zip artifacts/bin-windows-x86_64/*
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
